@@ -105,7 +105,7 @@ theme: next
 deploy:
   type: git
   repo: https://github.com/chengco/chengco.github.io.git
-  branch: main
+  branch: static
   
 addlink:
   before_text: 本文地址： # text before the post link
