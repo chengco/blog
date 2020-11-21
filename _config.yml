@@ -103,7 +103,9 @@ theme: next
 # Deployment
 ## Docs: https://hexo.io/docs/one-command-deployment
 deploy:
-  type: ''
+  type: git
+  repo: https://github.com/chengco/chengco.github.io.git
+  branch: main
   
 addlink:
   before_text: 本文地址： # text before the post link
