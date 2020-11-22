@@ -352,7 +352,7 @@
       var visitors = document.querySelector('.leancloud_visitors');
       var url = decodeURI(visitors.id);
       var title = visitors.dataset.flagTitle;
-
+      console.log(url)
       Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
         .then(response => response.json())
         .then(({ results }) => {
@@ -398,7 +398,7 @@
         });
     }
 
-    let { app_id, app_key, server_url } = {"enable":true,"app_id":"ntQqiNOVPir6T7gkR4cHxjXj-gzGzoHsz","app_key":"PxRPUwWKsfl0QNkYoEbhDuqm","server_url":"ntqqinov.lc-cn-n1-shared.com","security":false};
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"ntQqiNOVPir6T7gkR4cHxjXj-gzGzoHsz","app_key":"PxRPUwWKsfl0QNkYoEbhDuqm","server_url":null,"security":false};
     function fetchData(api_server) {
       var Counter = (method, url, data) => {
         return fetch(`${api_server}/1.1${url}`, {
