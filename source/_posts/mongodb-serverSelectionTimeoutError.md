@@ -1,5 +1,5 @@
 ---
-title: MongoDB-ServerSelectionTimeoutError: [Errno 61] Connection refused的问题
+title: 'MongoDB-ServerSelectionTimeoutError: [Errno 61] Connection refused的问题'
 date: 2020-11-24 23:00:42
 tags: mongoDB
 categories: 日常踩坑
