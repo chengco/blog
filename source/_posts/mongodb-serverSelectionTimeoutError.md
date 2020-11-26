@@ -1,8 +1,9 @@
 ---
-title: 'MongoDB-ServerSelectionTimeoutError的问题'
-date: 2020-11-24 23:00:42
+title: MongoDB-ServerSelectionTimeoutError的问题
 tags: mongoDB
 categories: 日常踩坑
+abbrlink: 65529
+date: 2020-11-24 23:00:42
 ---
 
 ### 问题现象

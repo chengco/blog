@@ -110,3 +110,7 @@ deploy:
 addlink:
   before_text: 本文地址： # text before the post link
   after_text: ，转载请注明出处。 # text after the post link
+
+abbrlink:
+alg: crc32  # 算法：crc16(default) and crc32 
+rep: hex    # 进制：dec(default) and hex
