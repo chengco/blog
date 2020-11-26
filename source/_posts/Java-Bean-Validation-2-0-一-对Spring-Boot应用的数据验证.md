@@ -1,6 +1,6 @@
 ---
 title: 'Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证'
-tags: Java Validation
+tags: [Java, Spring Boot]
 categories: Java
 abbrlink: 31379
 date: 2020-11-26 22:58:16

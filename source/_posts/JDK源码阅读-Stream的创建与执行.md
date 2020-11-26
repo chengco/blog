@@ -2,8 +2,8 @@
 title: JDK源码阅读-Stream的创建与执行
 abbrlink: 52053
 date: 2020-11-26 22:30:49
-tags: Java Stream
-categories: Java 源码阅读
+tags: [Java, JDK, Stream]
+categories: [Java, JDK, 源码阅读]
 ---
 
 # JDK源码阅读-Stream的创建与执行

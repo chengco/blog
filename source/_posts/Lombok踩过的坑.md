@@ -1,6 +1,6 @@
 ---
 title: Lombok踩过的坑
-tags: Lombok
+tags: [Java, Lombok]
 categories: 日常踩坑
 abbrlink: 23605
 date: 2020-11-26 22:29:04
