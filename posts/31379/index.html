@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/WechatIMG9.jpeg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/WechatIMG9.jpeg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/WechatIMG9.jpeg">
+  <link rel="mask-icon" href="/images/WechatIMG9.jpeg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"chengco.net","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="写在前面数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。Eclipse基金会在2019年8月份发布了Jakarta Bean Validation 2.0规范。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证">
+<meta property="og:url" content="http://chengco.net/posts/31379/index.html">
+<meta property="og:site_name" content="chengco的博客">
+<meta property="og:description" content="写在前面数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。Eclipse基金会在2019年8月份发布了Jakarta Bean Validation 2.0规范。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-11-26T14:58:16.000Z">
+<meta property="article:modified_time" content="2020-11-26T14:59:31.684Z">
+<meta property="article:author" content="chengco">
+<meta property="article:tag" content="Java Validation">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://chengco.net/posts/31379/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证 | chengco的博客</title>
+  
+
+
+  <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?50f74dc7e9fc5cb68f10c3492eb241c0";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+  </script>
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">chengco的博客</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">软件设计开发/源码阅读/读书心得记录 总结 沉淀</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/chengco" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://chengco.net/posts/31379/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/WechatIMG9.jpeg">
+      <meta itemprop="name" content="chengco">
+      <meta itemprop="description" content="但行好事，莫问前程">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="chengco的博客">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-11-26 22:58:16 / 修改时间：22:59:31" itemprop="dateCreated datePublished" datetime="2020-11-26T22:58:16+08:00">2020-11-26</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java/" itemprop="url" rel="index"><span itemprop="name">Java</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/posts/31379/" class="post-meta-item leancloud_visitors" data-flag-title="Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+            <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv" style="display: none;">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span id="busuanzi_value_page_pv"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="写在前面"><a href="#写在前面" class="headerlink" title="写在前面"></a>写在前面</h2><p>数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。Eclipse基金会在2019年8月份发布了<a target="_blank" rel="noopener" href="https://beanvalidation.org/2.0">Jakarta Bean Validation 2.0规范</a>。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。</p>
+<a id="more"></a>
+
+<h2 id="包依赖"><a href="#包依赖" class="headerlink" title="包依赖"></a>包依赖</h2><p>对于Spring Boot应用来说，不需要特别配置，以gradle配置为例，当有以下配置时会自动支持验证功能。</p>
+<blockquote>
+<p>   compile ‘org.springframework.boot:spring-boot-starter-web’</p>
+</blockquote>
+<p>Java Bean验证是一个相对通用的规范，并不依赖某个框架，对任意Java应用，均可通过依赖<code>validation-api</code>和<code>hibernate-validator</code>引入此功能，<code>validation-api</code>是Bean Validation规范定义的API，<code>hibernate-validator</code>是对应的实现，也是事实标准。注意<code>hibernate-validator</code>与Hibernate持久化框架并无依赖关系，可单独依赖使用。</p>
+<h2 id="一个例子"><a href="#一个例子" class="headerlink" title="一个例子"></a>一个例子</h2><p>以下代码为Validation Controller, 当Spring Boot发现参数注解为<code>@Valid</code>时, 会自动启动默认的Vilidation实现<code>Hibernate Validator</code>进行验证。如果验证失败则抛出<code>MethodArgumentNotValidException</code>异常。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@RestController</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">TestController</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PostMapping(value = &quot;/testValidation&quot;, consumes = MediaType.APPLICATION_JSON_VALUE)</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">testValidation</span><span class="params">(<span class="meta">@Valid</span> <span class="meta">@RequestBody</span> TestResource resource)</span></span>&#123;</span><br><span class="line">        <span class="comment">//noop</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Resoure实现，对name字段进行NotNull验证。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">TestResource</span> </span>&#123;</span><br><span class="line">    <span class="meta">@NotNull(message = &quot;name must not be null&quot;)</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">int</span> age;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>执行结果展示默认的验证结果：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="attr">&quot;timestamp&quot;</span>: <span class="string">&quot;2020-09-28T05:41:23.558+0000&quot;</span>,</span><br><span class="line">    <span class="attr">&quot;status&quot;</span>: <span class="number">400</span>,</span><br><span class="line">    <span class="attr">&quot;error&quot;</span>: <span class="string">&quot;Bad Request&quot;</span>,</span><br><span class="line">    <span class="attr">&quot;errors&quot;</span>: [</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="attr">&quot;codes&quot;</span>: [</span><br><span class="line">                <span class="string">&quot;NotNull.testResource.name&quot;</span>,</span><br><span class="line">                <span class="string">&quot;NotNull.name&quot;</span>,</span><br><span class="line">                <span class="string">&quot;NotNull.java.lang.String&quot;</span>,</span><br><span class="line">                <span class="string">&quot;NotNull&quot;</span></span><br><span class="line">            ],</span><br><span class="line">            <span class="attr">&quot;arguments&quot;</span>: [</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="attr">&quot;codes&quot;</span>: [</span><br><span class="line">                        <span class="string">&quot;testResource.name&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;name&quot;</span></span><br><span class="line">                    ],</span><br><span class="line">                    <span class="attr">&quot;arguments&quot;</span>: <span class="literal">null</span>,</span><br><span class="line">                    <span class="attr">&quot;defaultMessage&quot;</span>: <span class="string">&quot;name&quot;</span>,</span><br><span class="line">                    <span class="attr">&quot;code&quot;</span>: <span class="string">&quot;name&quot;</span></span><br><span class="line">                &#125;</span><br><span class="line">            ],</span><br><span class="line">            <span class="attr">&quot;defaultMessage&quot;</span>: <span class="string">&quot;name must not be null&quot;</span>,</span><br><span class="line">            <span class="attr">&quot;objectName&quot;</span>: <span class="string">&quot;testResource&quot;</span>,</span><br><span class="line">            <span class="attr">&quot;field&quot;</span>: <span class="string">&quot;name&quot;</span>,</span><br><span class="line">            <span class="attr">&quot;rejectedValue&quot;</span>: <span class="literal">null</span>,</span><br><span class="line">            <span class="attr">&quot;bindingFailure&quot;</span>: <span class="literal">false</span>,</span><br><span class="line">            <span class="attr">&quot;code&quot;</span>: <span class="string">&quot;NotNull&quot;</span></span><br><span class="line">        &#125;</span><br><span class="line">    ],</span><br><span class="line">    <span class="attr">&quot;message&quot;</span>: <span class="string">&quot;Validation failed for object=&#x27;testResource&#x27;. Error count: 1&quot;</span>,</span><br><span class="line">    <span class="attr">&quot;path&quot;</span>: <span class="string">&quot;/testValidation&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="ExceptionHandler：格式化验证结果输出"><a href="#ExceptionHandler：格式化验证结果输出" class="headerlink" title="ExceptionHandler：格式化验证结果输出"></a>ExceptionHandler：格式化验证结果输出</h2><p>在本文开始的例子中，展示了验证结果的输出格式，对于仅有一个字段的验证，输出了大量的信息，但真正关注的可能仅是其中一小部分。对于Spring Boot应用来说，可以通过ExceptionHandler拦截<code>MethodArgumentNotValidException</code>异常，来实现验证结果的格式化输出。除错误信息外，错误码也可通过ExceptionHandler定制。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@ControllerAdvice</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">ExceptionController</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@ExceptionHandler(MethodArgumentNotValidException.class)</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> ResponseEntity&lt;String&gt; <span class="title">handleValidationException</span><span class="params">(MethodArgumentNotValidException e, WebRequest request)</span> </span>&#123;</span><br><span class="line">        BindingResult bindingResult = e.getBindingResult();</span><br><span class="line">        String errorMessage = bindingResult.getFieldErrors()</span><br><span class="line">                .stream()</span><br><span class="line">                .map(error -&gt; String.format(<span class="string">&quot;%s - %s&quot;</span>, error.getField(), error.getDefaultMessage()))</span><br><span class="line">                .collect(Collectors.joining(<span class="string">&quot; &quot;</span>));</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> ResponseEntity&lt;&gt;(errorMessage, HttpStatus.INTERNAL_SERVER_ERROR);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出结果为如下，简洁了不少。</p>
+<blockquote>
+<p>user.name - name must not be null</p>
+</blockquote>
+<h2 id="Bean-Validation-2-0规范内建注解"><a href="#Bean-Validation-2-0规范内建注解" class="headerlink" title="Bean Validation 2.0规范内建注解"></a>Bean Validation 2.0规范内建注解</h2><p>对于常见的约束校验，<code>Jakarta Bean Validation 2.0规范</code>提供了一些内建的注解来支持：</p>
+<ul>
+<li>@Null 值必须为null</li>
+<li>@NotNull 值不能为null</li>
+<li>@AssertTrue 值必须为true</li>
+<li>@AssertFalse 值必须为false</li>
+<li>@Min 值必须大于等于给定的数字，支持BigDecimal/BigInteger/byte/short/int/long类型</li>
+<li>@Max 值必须小于等于给定的数字，支持BigDecimal/BigInteger/byte/short/int/long类型</li>
+<li>@DecimalMin 值必须大于等于给定的数字（字符串类型），支持BigDecimal/BigInteger/CharSequence/byte/short/int/long类型</li>
+<li>@DecimalMax 值必须小于等于给定的数字（字符串类型），支持BigDecimal/BigInteger/CharSequence/byte/short/int/long类型</li>
+<li>@Negative 值必须为负数</li>
+<li>@NegativeOrZero 值必须为零或负数</li>
+<li>@Positive 值必须为正数</li>
+<li>@PositiveOrZero 值必须为零或正数</li>
+<li>@Size 指定元素个数范围，支持CharSequence/Collection/Map/Array</li>
+<li>@Digits 指定数字整数部分和小数部分最大长度</li>
+<li>@Past 值必须为过去的时间</li>
+<li>@PastOrPresent 值必须为现在或过去的时间</li>
+<li>@Future 值必须为将来的时间</li>
+<li>@FutureOrPresent 值必须为现在或将来的时间</li>
+<li>@Pattern 匹配正则表达式</li>
+<li>@NotEmpty 非空，支持CharSequence/Collection/Map/Array</li>
+<li>@NotBlank 必须不能为null且至少包含一个非空白字符</li>
+<li>@Email 必须为合法的email地址</li>
+</ul>
+<h2 id="使用-Valid做嵌套结构验证"><a href="#使用-Valid做嵌套结构验证" class="headerlink" title="使用@Valid做嵌套结构验证"></a>使用@Valid做嵌套结构验证</h2><p>对于嵌套结构的结构，需要使用<code>@Valid</code>注解传递验证声明，如下例，期望验证<code>UserResource</code>的name字段，因为存在嵌套结构，所以需要中user字段上添加<code>@Valid</code>注解声明。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">TestResource</span> </span>&#123;</span><br><span class="line">    <span class="meta">@Valid</span></span><br><span class="line">    <span class="keyword">private</span> UserResource user; </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">UserResource</span> </span>&#123;</span><br><span class="line">    <span class="meta">@NotNull(message = &quot;name must not be null&quot;)</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">int</span> age;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
+<li><code>validation-api</code>是Bean Validation规范定义的API，<code>hibernate-validator</code>是对应的默认实现和事实标准。</li>
+<li>ExceptionHandler：格式化验证结果输出</li>
+<li>Jakarta Bean Validation 2.0规范，提供了更丰富的内建功能</li>
+<li>对嵌套结构验证时，使用@Valid</li>
+</ul>
+<p>本文地址： <a href="http://chengco.net/posts/undefined/">http://chengco.net/posts/undefined/</a> ，转载请注明出处。</p>
+
+    </div>
+
+    
+    
+    
+        <div class="reward-container">
+  <div></div>
+  <button onclick="var qr = document.getElementById('qr'); qr.style.display = (qr.style.display === 'none') ? 'block' : 'none';">
+    打赏
+  </button>
+  <div id="qr" style="display: none;">
+      
+      <div style="display: inline-block;">
+        <img src="/images/wechatpay.png" alt="chengco 微信支付">
+        <p>微信支付</p>
+      </div>
+      
+      <div style="display: inline-block;">
+        <img src="/images/alipay.png" alt="chengco 支付宝">
+        <p>支付宝</p>
+      </div>
+
+  </div>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Java-Validation/" rel="tag"># Java Validation</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/posts/52053/" rel="prev" title="JDK源码阅读-Stream的创建与执行">
+      <i class="fa fa-chevron-left"></i> JDK源码阅读-Stream的创建与执行
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%99%E5%9C%A8%E5%89%8D%E9%9D%A2"><span class="nav-number">1.</span> <span class="nav-text">写在前面</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8C%85%E4%BE%9D%E8%B5%96"><span class="nav-number">2.</span> <span class="nav-text">包依赖</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E4%BE%8B%E5%AD%90"><span class="nav-number">3.</span> <span class="nav-text">一个例子</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ExceptionHandler%EF%BC%9A%E6%A0%BC%E5%BC%8F%E5%8C%96%E9%AA%8C%E8%AF%81%E7%BB%93%E6%9E%9C%E8%BE%93%E5%87%BA"><span class="nav-number">4.</span> <span class="nav-text">ExceptionHandler：格式化验证结果输出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Bean-Validation-2-0%E8%A7%84%E8%8C%83%E5%86%85%E5%BB%BA%E6%B3%A8%E8%A7%A3"><span class="nav-number">5.</span> <span class="nav-text">Bean Validation 2.0规范内建注解</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-Valid%E5%81%9A%E5%B5%8C%E5%A5%97%E7%BB%93%E6%9E%84%E9%AA%8C%E8%AF%81"><span class="nav-number">6.</span> <span class="nav-text">使用@Valid做嵌套结构验证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="chengco"
+      src="/images/WechatIMG9.jpeg">
+  <p class="site-author-name" itemprop="name">chengco</p>
+  <div class="site-description" itemprop="description">但行好事，莫问前程</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/chengco" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;chengco" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:531903260@qq.com" title="邮箱 → mailto:531903260@qq.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>邮箱</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="http://www.zhihu.com/people/chengco" title="知乎 → http:&#x2F;&#x2F;www.zhihu.com&#x2F;people&#x2F;chengco" rel="noopener" target="_blank"><i class="fab fa-fw"></i>知乎</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://juejin.cn/user/3148623800706423" title="掘金 → https:&#x2F;&#x2F;juejin.cn&#x2F;user&#x2F;3148623800706423" rel="noopener" target="_blank"><i class="fab fa-fw"></i>掘金</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">chengco</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js">
+</script>
+
+        
+<div class="busuanzi-count">
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+    <span class="post-meta-item" id="busuanzi_container_site_uv" style="display: none;">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv" style="display: none;">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+      console.log(url)
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"ntQqiNOVPir6T7gkR4cHxjXj-gzGzoHsz","app_key":"PxRPUwWKsfl0QNkYoEbhDuqm","server_url":null,"security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
