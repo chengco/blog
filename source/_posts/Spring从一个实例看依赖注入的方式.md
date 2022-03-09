@@ -1,8 +1,11 @@
 ---
 title: Spring 从一个实例看依赖注入的方式
-date: 2022-03-09 22:24:28
-tags: [Java, Spring]
+tags:
+  - Java
+  - Spring
 categories: Java
+abbrlink: 49430
+date: 2022-03-09 22:24:28
 ---
 Spring可通过三种方式实现依赖注入，基于构造函数的依赖注入，基于Setter方法的依赖注入，以及基于Field的依赖注入。
 
