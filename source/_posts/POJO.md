@@ -1,8 +1,10 @@
 ---
 title: 什么是POJO？
-date: 2022-03-09 23:02:49
-tags: [Java]
+tags:
+  - Java
 categories: Java
+abbrlink: 55081
+date: 2022-03-09 23:02:49
 ---
 Plain Old Java Object， 普通的Java对象，封装业务逻辑，除Java语言规范外，没有任何其他的限制，不与任何框架绑定。
 <!-- more -->
