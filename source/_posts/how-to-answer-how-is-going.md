@@ -1,8 +1,9 @@
 ---
-title: how-to-answer-how-is-going
-date: 2022-06-21 23:35:05
+title: How to answer "how is going?"
 tags: Learning English
 categories: Learning English
+abbrlink: 38057
+date: 2022-06-21 23:35:05
 ---
 At the beginning of the conversation, people could say “How are you? “ “How are you doing?” “How is it going?”  “Hey, how is going?”, how to answer these questions under this situation? what should I say? It confuses me a lot until I know there are no much different among these expressions.  Most of the time, when people say “how is it going”, it’s just a greeting like say “Hi”. It’s not really a real question, people are not asking you to give them some stories of your life. It’s just a simple greeting.
 <!-- more -->
