@@ -5,6 +5,8 @@ categories: 日常踩坑
 abbrlink: 65529
 date: 2020-11-24 23:00:42
 ---
+如何解决MongoDB-ServerSelectionTimeoutError的问题
+<!-- more -->
 
 ### 问题现象
 
@@ -19,7 +21,6 @@ docker pull mongo
 ```bash
 $ docker run --name some-mongo -d mongo:latest
 ```
-<!-- more -->
 
 使用python客户端pymongo执行简单的测试：
 

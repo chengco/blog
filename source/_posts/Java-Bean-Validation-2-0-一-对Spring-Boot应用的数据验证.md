@@ -5,9 +5,7 @@ categories: Java
 abbrlink: 31379
 date: 2020-11-26 22:58:16
 ---
-## 写在前面
-
-数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。Eclipse基金会在2019年8月份发布了[Jakarta Bean Validation 2.0规范](https://beanvalidation.org/2.0)。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。
+数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。 Eclipse基金会在2019年8月份发布了[Jakarta Bean Validation 2.0规范](https://beanvalidation.org/2.0)。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。
 <!-- more -->
 
 ## 包依赖

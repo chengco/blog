@@ -5,14 +5,15 @@ date: 2020-11-26 22:30:49
 tags: [Java, JDK, Stream]
 categories: 源码阅读
 ---
+本文主要涉及java.util.stream包的代码, Stream的创建与执行，所使用JDK源码版本为jdk-11.0.3.
+
+<!-- more -->
 
 # JDK源码阅读-Stream的创建与执行
 
 ## 写在前面
 
 本文主要涉及java.util.stream包的代码，所使用JDK源码版本为jdk-11.0.3.
-
-<!-- more -->
 
 一个简单的Stream例子：
 
