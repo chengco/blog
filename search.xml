@@ -1,0 +1,538 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>JDK源码阅读-Stream的创建与执行</title>
+    <url>/posts/52053/</url>
+    <content><![CDATA[<p>本文主要涉及java.util.stream包的代码, Stream的创建与执行，所使用JDK源码版本为jdk-11.0.3.</p>
+<span id="more"></span>
+
+<h1 id="JDK源码阅读-Stream的创建与执行"><a href="#JDK源码阅读-Stream的创建与执行" class="headerlink" title="JDK源码阅读-Stream的创建与执行"></a>JDK源码阅读-Stream的创建与执行</h1><h2 id="写在前面"><a href="#写在前面" class="headerlink" title="写在前面"></a>写在前面</h2><p>本文主要涉及java.util.stream包的代码，所使用JDK源码版本为jdk-11.0.3.</p>
+<p>一个简单的Stream例子：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">import</span> java.util.stream.Stream;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Test</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> &#123;</span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line"></span><br><span class="line">        System.out.println();</span><br><span class="line"></span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line"></span><br><span class="line">        System.out.println();</span><br><span class="line"></span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEachOrdered(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<blockquote>
+<p>2 4 6 8 10 12 14 16 18<br>12 10 14 6 18 8 4 2 16<br>2 4 6 8 10 12 14 16 18 </p>
+</blockquote>
+<h2 id="总览"><a href="#总览" class="headerlink" title="总览"></a>总览</h2><h3 id="Stream相关的类与接口"><a href="#Stream相关的类与接口" class="headerlink" title="Stream相关的类与接口"></a>Stream相关的类与接口</h3><img src="/images/stream-class.png" width = "600" height = "200" />
+Stream相关的接口与类均在java.util.stream包中。BaseStream是所有Stream的公共接口，提供类基本的iterator、sequential、parallel、onClose接口。Stream（可以理解为引用类型）、IntStream、LongStream、DoubleStream扩展了BaseStream接口并提供了对应类型的接口，比如：相比Stream接口，IntStream、LongStream、DoubleStream拥有特有的average、sum等接口。
+
+<p>每种Stream又有对应pipeline的实现类：ReferencePipeline、IntPipeline、LongPipeline、DoublePipeline，pipeline的概念下一节具体介绍。</p>
+<h3 id="Stream-pipeline"><a href="#Stream-pipeline" class="headerlink" title="Stream pipeline"></a>Stream pipeline</h3><p>Stream的执行过程被抽象出一个pipeline的概念，每个pipeline会包含不同的阶段(stage):</p>
+<ul>
+<li>起始阶段(source stage)，有且仅有一个，Stream创建的时候即被创建，比如：通过Stream.of接口创建时，会实例化ReferencePipeline.Head作为Stream的起始阶段；</li>
+<li>过程阶段(intermediate stage)，0个或多个，如下例中包含两个过程阶段：distinct、map，parallel是一个特殊的存在，它只是设置一个标志位， 并不是一个过程阶段；对于过程阶段的各种操作，又有无状态操作(StatelessOp)和有状态操作(StatefulOp)之分, 比如：对于distinct、dropWhile、sorted需要在执行过程种记录执行状态，即有状态操作，而map、filter则属于无状态操作;</li>
+<li>终端阶段(terminal stage)，有且仅有一个，用于结果计算或者执行一些副作用，如下例中的forEach。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br></pre></td></tr></table></figure>
+
+<p>上例中，最终构造的pipeline如图所示，pipeline数据结构是一个双向链表，每个节点分别存储上一阶段，下一阶段，及起始阶段。终端操作前均为lazy操作，所有操作并未真正执行。而终端操作会综合所有阶段执行计算。<br><img src="/images/stream.dio.png" alt="Alt text here"></p>
+<h2 id="Stream源码分析"><a href="#Stream源码分析" class="headerlink" title="Stream源码分析"></a>Stream源码分析</h2><h3 id="Stream的创建"><a href="#Stream的创建" class="headerlink" title="Stream的创建"></a>Stream的创建</h3><p>Stream、IntStream、LongStream、DoubleStream接口都提供了静态方法<code>of</code>，用于便捷地创建Stream，分别用于创建引用类型、int、long、double的Stream。以Stream接口为例，传入一系列有序元素，比如<code>Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9)</code>。如下所示，<code>Stream.of</code>方法通过调用<code>Arrays.stream</code>实现。所以<code>Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9)</code>等同于<code>Arrays.stream(new int[]&#123;1, 2, 3, 4, 5, 6, 7, 8, 9&#125;)</code></p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">//Stream.java</span><br><span class="line">public static&lt;T&gt; Stream&lt;T&gt; of(T... values) &#123;</span><br><span class="line">        return Arrays.stream(values);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">//Arrays.java</span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(T[] array) &#123;</span><br><span class="line">        return stream(array, 0, array.length);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(T[] array, int startInclusive, int endExclusive) &#123;</span><br><span class="line">        return StreamSupport.stream(spliterator(array, startInclusive, endExclusive), false);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>StreamSupport是一个工具类用于创建顺序或并行Stream。StreamSupport.stream需要两个参数：</p>
+<ul>
+<li>spliterator，Spliterator类型，可通过<code>Spliterators.spliterator</code>创建，用于遍历&#x2F;拆分数组，</li>
+<li>parallel，boolean类型，标示是否并行，默认为false。</li>
+</ul>
+<p>ReferencePipeline实现了stream接口，是实现Stream过程阶段或起始阶段的抽象基类。ReferencePipeline.Head是原始阶段的实现。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">//StreamSupport.java</span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(Spliterator&lt;T&gt; spliterator, boolean parallel) &#123;</span><br><span class="line">        Objects.requireNonNull(spliterator);</span><br><span class="line">        return new ReferencePipeline.Head&lt;&gt;(spliterator,</span><br><span class="line">                                            StreamOpFlag.fromCharacteristics(spliterator),</span><br><span class="line">                                            parallel);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>至此，Stream创建的简单流程就完成了，IntStream、LongStream、DoubleStream的创建也是类似的。</p>
+<h3 id="Stream执行过程"><a href="#Stream执行过程" class="headerlink" title="Stream执行过程"></a>Stream执行过程</h3><p>以下面的测试代码为例：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br></pre></td></tr></table></figure>
+
+<h4 id="distinct"><a href="#distinct" class="headerlink" title="distinct"></a>distinct</h4><p>当我们调用<code>distinct</code>方法期望去除重复元素时，会执行如下代码，通过<code>DistinctOps.makeRef</code>创建并append一个disctinct的操作到当前Stream。具体代码如下：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//ReferencePipeline.java</span></span><br><span class="line"><span class="comment">// Stateful intermediate operations from Stream</span></span><br><span class="line"><span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> Stream&lt;P_OUT&gt; <span class="title function_">distinct</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> DistinctOps.makeRef(<span class="built_in">this</span>);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Appends a &quot;distinct&quot; operation to the provided stream, and returns the</span></span><br><span class="line"><span class="comment">     * new stream.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> &lt;T&gt; the type of both input and output elements</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> upstream a reference stream with element type T</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> the new stream</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">static</span> &lt;T&gt; ReferencePipeline&lt;T, T&gt; <span class="title function_">makeRef</span><span class="params">(AbstractPipeline&lt;?, T, ?&gt; upstream)</span> &#123;</span><br><span class="line">        <span class="comment">//实例化一个有状态操作。</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">ReferencePipeline</span>.StatefulOp&lt;T, T&gt;(upstream, StreamShape.REFERENCE,</span><br><span class="line">                                                      StreamOpFlag.IS_DISTINCT | StreamOpFlag.NOT_SIZED) &#123;</span><br><span class="line">            <span class="comment">//并行计算去除重复元素</span></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            &lt;P_IN&gt; Node&lt;T&gt; <span class="title function_">opEvaluateParallel</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                              Spliterator&lt;P_IN&gt; spliterator,</span></span><br><span class="line"><span class="params">                                              IntFunction&lt;T[]&gt; generator)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">//Lazy执行，包装DistinctSpliterator对象，用于后续执行去除重复元素</span></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            &lt;P_IN&gt; Spliterator&lt;T&gt; <span class="title function_">opEvaluateParallelLazy</span><span class="params">(PipelineHelper&lt;T&gt; helper, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            Sink&lt;T&gt; <span class="title function_">opWrapSink</span><span class="params">(<span class="type">int</span> flags, Sink&lt;T&gt; sink)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">        &#125;;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="map"><a href="#map" class="headerlink" title="map"></a>map</h4><p><code>map</code>是无状态操作，所以只需实例化一个<code>StatelessOp</code>，而<code>opWrapSink</code>则是包装一层mapper的执行操作。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> &lt;R&gt; Stream&lt;R&gt; <span class="title function_">map</span><span class="params">(Function&lt;? <span class="built_in">super</span> P_OUT, ? extends R&gt; mapper)</span> &#123;</span><br><span class="line">        Objects.requireNonNull(mapper);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">StatelessOp</span>&lt;P_OUT, R&gt;(<span class="built_in">this</span>, StreamShape.REFERENCE,</span><br><span class="line">                                     StreamOpFlag.NOT_SORTED | StreamOpFlag.NOT_DISTINCT) &#123;</span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            Sink&lt;P_OUT&gt; <span class="title function_">opWrapSink</span><span class="params">(<span class="type">int</span> flags, Sink&lt;R&gt; sink)</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">Sink</span>.ChainedReference&lt;P_OUT, R&gt;(sink) &#123;</span><br><span class="line">                    <span class="meta">@Override</span></span><br><span class="line">                    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">accept</span><span class="params">(P_OUT u)</span> &#123;</span><br><span class="line">                        downstream.accept(mapper.apply(u));</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="parallel"><a href="#parallel" class="headerlink" title="parallel"></a>parallel</h4><p>parallel并不是pipeline种的一个阶段，pipeline相关的实现类(如：ReferencePipeline、Intpipeline)有一个共同的基类AbstractPipeline，其上维护了一个变量parallel来标示pipeline是否并行, 仅维护在起始阶段的结构上。如下代码所示：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">     * True if pipeline is parallel, otherwise the pipeline is sequential; only</span></span><br><span class="line"><span class="comment">     * valid for the source stage.</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">boolean</span> parallel;</span><br></pre></td></tr></table></figure>
+
+<p>设置Stream为并行模式</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> S <span class="title function_">parallel</span><span class="params">()</span> &#123;</span><br><span class="line">        sourceStage.parallel = <span class="literal">true</span>;</span><br><span class="line">        <span class="keyword">return</span> (S) <span class="built_in">this</span>;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>设置Stream为串行模式</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> S <span class="title function_">sequential</span><span class="params">()</span> &#123;</span><br><span class="line">        sourceStage.parallel = <span class="literal">false</span>;</span><br><span class="line">        <span class="keyword">return</span> (S) <span class="built_in">this</span>;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+
+<h4 id="forEach"><a href="#forEach" class="headerlink" title="forEach"></a>forEach</h4><p>forEach是一个终端操作，同样，通过工厂方法<code>ForEachOps.makeRef</code>创建一个forEach的操作，用于执行Stream的最终计算。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Terminal operations from Stream</span></span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">forEach</span><span class="params">(Consumer&lt;? <span class="built_in">super</span> P_OUT&gt; action)</span> &#123;</span><br><span class="line">        evaluate(ForEachOps.makeRef(action, <span class="literal">false</span>));</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>evaluate是一个通用的终端操作求值方法，对于forEach、reduce等终端操作均执行该方法，接收<code>TerminalOp</code>对象，首先判断<code>isParallel()</code>,如需并行执行<code>terminalOp.evaluateParallel</code>, 否则执行<code>terminalOp.evaluateSequential</code>。不管是执行那个方法都需要两个参数：</p>
+<ul>
+<li>this, 是起始操作或最后一个过程操作（本例中是<code>map</code>操作），此参数为<code>PipelineHelper</code>类型，从类图结构看，<code>PipelineHelper</code>是所有pipeline类型的顶级父类，用于Stream pipeline的执行，描述了Stream pipeline的所有信息。</li>
+<li><code>sourceSpliterator(terminalOp.getOpFlags())</code>，Spliterator类型，用于遍历&#x2F;拆分数组，对于串行执行或者无状态并行执行的Stream，其为起始阶段默认创建的Spliterator对象，否则需要对所有有状态操作进行计算。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Terminal evaluation methods</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Evaluate the pipeline with a terminal operation to produce a result.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> &lt;R&gt; the type of result</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> terminalOp the terminal operation to be applied to the pipeline.</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> the result</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">final</span> &lt;R&gt; R <span class="title function_">evaluate</span><span class="params">(TerminalOp&lt;E_OUT, R&gt; terminalOp)</span> &#123;</span><br><span class="line">        <span class="keyword">assert</span> <span class="title function_">getOutputShape</span><span class="params">()</span> == terminalOp.inputShape();</span><br><span class="line">        <span class="keyword">if</span> (linkedOrConsumed)</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">IllegalStateException</span>(MSG_STREAM_LINKED);</span><br><span class="line">        linkedOrConsumed = <span class="literal">true</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> isParallel()</span><br><span class="line">               ? terminalOp.evaluateParallel(<span class="built_in">this</span>, sourceSpliterator(terminalOp.getOpFlags()))</span><br><span class="line">               : terminalOp.evaluateSequential(<span class="built_in">this</span>, sourceSpliterator(terminalOp.getOpFlags()));</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>evaluateSequential</code>,分两部分执行：</p>
+<ul>
+<li><code>wrapSink</code>,将所有过程操作比如map、filter等包装成一个Sink；</li>
+<li><code>copyInto</code>,执行计算</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">public</span> &lt;S&gt; Void <span class="title function_">evaluateSequential</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                   Spliterator&lt;S&gt; spliterator)</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> helper.wrapAndCopyInto(<span class="built_in">this</span>, spliterator).get();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> &lt;P_IN, S <span class="keyword">extends</span> <span class="title class_">Sink</span>&lt;E_OUT&gt;&gt; S <span class="title function_">wrapAndCopyInto</span><span class="params">(S sink, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">    copyInto(wrapSink(Objects.requireNonNull(sink)), spliterator);</span><br><span class="line">    <span class="keyword">return</span> sink;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> &lt;P_IN&gt; <span class="keyword">void</span> <span class="title function_">copyInto</span><span class="params">(Sink&lt;P_IN&gt; wrappedSink, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">    Objects.requireNonNull(wrappedSink);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!StreamOpFlag.SHORT_CIRCUIT.isKnown(getStreamAndOpFlags())) &#123;</span><br><span class="line">        wrappedSink.begin(spliterator.getExactSizeIfKnown());</span><br><span class="line">        spliterator.forEachRemaining(wrappedSink);</span><br><span class="line">        wrappedSink.end();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span> &#123;</span><br><span class="line">        copyIntoWithCancel(wrappedSink, spliterator);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>evaluateParallel</code>, 则拆分成多个task，并行执行，基于Fork&#x2F;Join框架实现。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">public</span> &lt;S&gt; Void <span class="title function_">evaluateParallel</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                 Spliterator&lt;S&gt; spliterator)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (ordered)</span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ForEachOrderedTask</span>&lt;&gt;(helper, spliterator, <span class="built_in">this</span>).invoke();</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ForEachTask</span>&lt;&gt;(helper, spliterator, helper.wrapSink(<span class="built_in">this</span>)).invoke();</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
+<li>可使用<code>Stream</code>、<code>IntStream</code>、<code>LongStream</code>、<code>DoubleStream</code>接口或<code>Array.stream</code>来创建一个<code>Stream</code>，不同类型的<code>Stream</code>间可通过<code>mapToObj</code>、<code>mapToInt</code>互相转换</li>
+<li>Stream的执行过程被抽象出一个pipeline的概念，每个pipeline会包含不同的阶段(stage)：起始阶段、过程阶段、终端阶段，用于结果计算的数据和策略的准备。</li>
+<li>对于过程阶段的操作，又有无状态操作(StatelessOp)和有状态操作(StatefulOp)之分, 比如：对于distinct、dropWhile、sorted需要在执行过程种记录执行状态，即有状态操作</li>
+</ul>
+<p>本文地址： <a href="http://chengco.net/posts/52053/">http://chengco.net/posts/52053/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>源码阅读</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+        <tag>JDK</tag>
+        <tag>Stream</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证</title>
+    <url>/posts/31379/</url>
+    <content><![CDATA[<p>数据验证是一个应用开发中非常常见的需求，不管是表现层、模型层还是持久层都有类似的需求来保证数据的有效性。 Eclipse基金会在2019年8月份发布了<a href="https://beanvalidation.org/2.0">Jakarta Bean Validation 2.0规范</a>。这个规范定义了用于Java Bean验证的元数据模型和API，可以使用注解或XML做数据验证，也可以扩展元数据，定义自己的验证逻辑。仅支持Java 8以上的版本。</p>
+<span id="more"></span>
+
+<h2 id="包依赖"><a href="#包依赖" class="headerlink" title="包依赖"></a>包依赖</h2><p>对于Spring Boot应用来说，不需要特别配置，以gradle配置为例，当有以下配置时会自动支持验证功能。</p>
+<blockquote>
+<p>   compile ‘org.springframework.boot:spring-boot-starter-web’</p>
+</blockquote>
+<p>Java Bean验证是一个相对通用的规范，并不依赖某个框架，对任意Java应用，均可通过依赖<code>validation-api</code>和<code>hibernate-validator</code>引入此功能，<code>validation-api</code>是Bean Validation规范定义的API，<code>hibernate-validator</code>是对应的实现，也是事实标准。注意<code>hibernate-validator</code>与Hibernate持久化框架并无依赖关系，可单独依赖使用。</p>
+<h2 id="一个例子"><a href="#一个例子" class="headerlink" title="一个例子"></a>一个例子</h2><p>以下代码为Validation Controller, 当Spring Boot发现参数注解为<code>@Valid</code>时, 会自动启动默认的Vilidation实现<code>Hibernate Validator</code>进行验证。如果验证失败则抛出<code>MethodArgumentNotValidException</code>异常。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@RestController</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TestController</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PostMapping(value = &quot;/testValidation&quot;, consumes = MediaType.APPLICATION_JSON_VALUE)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">testValidation</span><span class="params">(<span class="meta">@Valid</span> <span class="meta">@RequestBody</span> TestResource resource)</span>&#123;</span><br><span class="line">        <span class="comment">//noop</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Resoure实现，对name字段进行NotNull验证。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TestResource</span> &#123;</span><br><span class="line">    <span class="meta">@NotNull(message = &quot;name must not be null&quot;)</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> age;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>执行结果展示默认的验证结果：</p>
+<figure class="highlight json"><table><tr><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;timestamp&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2020-09-28T05:41:23.558+0000&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="number">400</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;error&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Bad Request&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;errors&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;codes&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">                <span class="string">&quot;NotNull.testResource.name&quot;</span><span class="punctuation">,</span></span><br><span class="line">                <span class="string">&quot;NotNull.name&quot;</span><span class="punctuation">,</span></span><br><span class="line">                <span class="string">&quot;NotNull.java.lang.String&quot;</span><span class="punctuation">,</span></span><br><span class="line">                <span class="string">&quot;NotNull&quot;</span></span><br><span class="line">            <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">                <span class="punctuation">&#123;</span></span><br><span class="line">                    <span class="attr">&quot;codes&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">                        <span class="string">&quot;testResource.name&quot;</span><span class="punctuation">,</span></span><br><span class="line">                        <span class="string">&quot;name&quot;</span></span><br><span class="line">                    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">                    <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">                    <span class="attr">&quot;defaultMessage&quot;</span><span class="punctuation">:</span> <span class="string">&quot;name&quot;</span><span class="punctuation">,</span></span><br><span class="line">                    <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;name&quot;</span></span><br><span class="line">                <span class="punctuation">&#125;</span></span><br><span class="line">            <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;defaultMessage&quot;</span><span class="punctuation">:</span> <span class="string">&quot;name must not be null&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;objectName&quot;</span><span class="punctuation">:</span> <span class="string">&quot;testResource&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;field&quot;</span><span class="punctuation">:</span> <span class="string">&quot;name&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;rejectedValue&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;bindingFailure&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;NotNull&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;message&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Validation failed for object=&#x27;testResource&#x27;. Error count: 1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;path&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/testValidation&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+
+<h2 id="ExceptionHandler：格式化验证结果输出"><a href="#ExceptionHandler：格式化验证结果输出" class="headerlink" title="ExceptionHandler：格式化验证结果输出"></a>ExceptionHandler：格式化验证结果输出</h2><p>在本文开始的例子中，展示了验证结果的输出格式，对于仅有一个字段的验证，输出了大量的信息，但真正关注的可能仅是其中一小部分。对于Spring Boot应用来说，可以通过ExceptionHandler拦截<code>MethodArgumentNotValidException</code>异常，来实现验证结果的格式化输出。除错误信息外，错误码也可通过ExceptionHandler定制。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@ControllerAdvice</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">ExceptionController</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@ExceptionHandler(MethodArgumentNotValidException.class)</span></span><br><span class="line">    <span class="keyword">public</span> ResponseEntity&lt;String&gt; <span class="title function_">handleValidationException</span><span class="params">(MethodArgumentNotValidException e, WebRequest request)</span> &#123;</span><br><span class="line">        <span class="type">BindingResult</span> <span class="variable">bindingResult</span> <span class="operator">=</span> e.getBindingResult();</span><br><span class="line">        <span class="type">String</span> <span class="variable">errorMessage</span> <span class="operator">=</span> bindingResult.getFieldErrors()</span><br><span class="line">                .stream()</span><br><span class="line">                .map(error -&gt; String.format(<span class="string">&quot;%s - %s&quot;</span>, error.getField(), error.getDefaultMessage()))</span><br><span class="line">                .collect(Collectors.joining(<span class="string">&quot; &quot;</span>));</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">ResponseEntity</span>&lt;&gt;(errorMessage, HttpStatus.INTERNAL_SERVER_ERROR);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出结果为如下，简洁了不少。</p>
+<blockquote>
+<p>user.name - name must not be null</p>
+</blockquote>
+<h2 id="Bean-Validation-2-0规范内建注解"><a href="#Bean-Validation-2-0规范内建注解" class="headerlink" title="Bean Validation 2.0规范内建注解"></a>Bean Validation 2.0规范内建注解</h2><p>对于常见的约束校验，<code>Jakarta Bean Validation 2.0规范</code>提供了一些内建的注解来支持：</p>
+<ul>
+<li>@Null 值必须为null</li>
+<li>@NotNull 值不能为null</li>
+<li>@AssertTrue 值必须为true</li>
+<li>@AssertFalse 值必须为false</li>
+<li>@Min 值必须大于等于给定的数字，支持BigDecimal&#x2F;BigInteger&#x2F;byte&#x2F;short&#x2F;int&#x2F;long类型</li>
+<li>@Max 值必须小于等于给定的数字，支持BigDecimal&#x2F;BigInteger&#x2F;byte&#x2F;short&#x2F;int&#x2F;long类型</li>
+<li>@DecimalMin 值必须大于等于给定的数字（字符串类型），支持BigDecimal&#x2F;BigInteger&#x2F;CharSequence&#x2F;byte&#x2F;short&#x2F;int&#x2F;long类型</li>
+<li>@DecimalMax 值必须小于等于给定的数字（字符串类型），支持BigDecimal&#x2F;BigInteger&#x2F;CharSequence&#x2F;byte&#x2F;short&#x2F;int&#x2F;long类型</li>
+<li>@Negative 值必须为负数</li>
+<li>@NegativeOrZero 值必须为零或负数</li>
+<li>@Positive 值必须为正数</li>
+<li>@PositiveOrZero 值必须为零或正数</li>
+<li>@Size 指定元素个数范围，支持CharSequence&#x2F;Collection&#x2F;Map&#x2F;Array</li>
+<li>@Digits 指定数字整数部分和小数部分最大长度</li>
+<li>@Past 值必须为过去的时间</li>
+<li>@PastOrPresent 值必须为现在或过去的时间</li>
+<li>@Future 值必须为将来的时间</li>
+<li>@FutureOrPresent 值必须为现在或将来的时间</li>
+<li>@Pattern 匹配正则表达式</li>
+<li>@NotEmpty 非空，支持CharSequence&#x2F;Collection&#x2F;Map&#x2F;Array</li>
+<li>@NotBlank 必须不能为null且至少包含一个非空白字符</li>
+<li>@Email 必须为合法的email地址</li>
+</ul>
+<h2 id="使用-Valid做嵌套结构验证"><a href="#使用-Valid做嵌套结构验证" class="headerlink" title="使用@Valid做嵌套结构验证"></a>使用@Valid做嵌套结构验证</h2><p>对于嵌套结构的结构，需要使用<code>@Valid</code>注解传递验证声明，如下例，期望验证<code>UserResource</code>的name字段，因为存在嵌套结构，所以需要中user字段上添加<code>@Valid</code>注解声明。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TestResource</span> &#123;</span><br><span class="line">    <span class="meta">@Valid</span></span><br><span class="line">    <span class="keyword">private</span> UserResource user; </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">UserResource</span> &#123;</span><br><span class="line">    <span class="meta">@NotNull(message = &quot;name must not be null&quot;)</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> age;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
+<li><code>validation-api</code>是Bean Validation规范定义的API，<code>hibernate-validator</code>是对应的默认实现和事实标准。</li>
+<li>ExceptionHandler：格式化验证结果输出</li>
+<li>Jakarta Bean Validation 2.0规范，提供了更丰富的内建功能</li>
+<li>对嵌套结构验证时，使用@Valid</li>
+</ul>
+<p>本文地址： <a href="http://chengco.net/posts/31379/">http://chengco.net/posts/31379/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>Java</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+        <tag>Spring Boot</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Spring 从一个实例看依赖注入的方式</title>
+    <url>/posts/49430/</url>
+    <content><![CDATA[<p>Spring可通过三种方式实现依赖注入，基于构造函数的依赖注入，基于Setter方法的依赖注入，以及基于Field的依赖注入。</p>
+<span id="more"></span>
+
+<h2 id="实例：抽象类的依赖注入"><a href="#实例：抽象类的依赖注入" class="headerlink" title="实例：抽象类的依赖注入"></a>实例：抽象类的依赖注入</h2><p>现有一个<code>Component</code> A， 通常采用构造函数的方式注入依赖 <code>dependencyBean</code></p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">A</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">A</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//some logic using dependencyBean</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>而当有另一个<code>Component</code>B：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">B</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">B</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//some logic using dependencyBean</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>A和B有着相同的依赖和相似的逻辑，这时通常会使用模版方法，将相同的逻辑抽象到共同的父类中，父类是不需要增加 <code>@Component</code> 注解声明。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">abstract</span> <span class="keyword">class</span> <span class="title class_">AbstractBean</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">AbstractBean</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//some logic using dependencyBean</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">A</span> <span class="keyword">extends</span> <span class="title class_">AbstractBean</span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">A</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">super</span>(dependencyBean);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">B</span> <span class="keyword">extends</span> <span class="title class_">AbstractBean</span>&#123;</span><br><span class="line"> </span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">B</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">super</span>(dependencyBean);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>上面的做法注入dependencyBean的逻辑还是维护在子类中，会造成代码冗余。使用Setter方法的依赖注入可减少代码冗余：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">abstract</span> <span class="keyword">class</span> <span class="title class_">AbstractBean</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Autowired</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">setDependencyBean</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//some logic using dependencyBean</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">A</span> <span class="keyword">extends</span> <span class="title class_">AbstractBean</span>&#123;</span><br><span class="line">    <span class="comment">//other logic</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">B</span> <span class="keyword">extends</span> <span class="title class_">AbstractBean</span>&#123;</span><br><span class="line">    <span class="comment">//other logic</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>使用构造函数的依赖注入和Setter方法的依赖注入有啥区别，下面看一下Spring Bean的依赖注入实现方式。</p>
+<h2 id="Spring-Bean的三种依赖注入实现方式"><a href="#Spring-Bean的三种依赖注入实现方式" class="headerlink" title="Spring Bean的三种依赖注入实现方式"></a>Spring Bean的三种依赖注入实现方式</h2><p>Spring可通过三种方式实现依赖注入，基于构造函数的依赖注入，基于Setter方法的依赖注入，以及基于Field的依赖注入。</p>
+<h3 id="基于构造函数的依赖注入"><a href="#基于构造函数的依赖注入" class="headerlink" title="基于构造函数的依赖注入"></a>基于构造函数的依赖注入</h3><figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">DemoBean</span>&#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">DemoBean</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>基于构造函数注入的优点是，可以很方便地构造immutable的对象，将注入的字段声明为 final，在类实例化期间注入依赖。</p>
+<h3 id="基于Setter方法的依赖注入"><a href="#基于Setter方法的依赖注入" class="headerlink" title="基于Setter方法的依赖注入"></a>基于Setter方法的依赖注入</h3><figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">DemoBean</span>&#123;</span><br><span class="line">    <span class="keyword">public</span> DependencyBean dependencyBean;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Autowired</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">setDependencyBean</span><span class="params">(DependencyBean dependencyBean)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.dependencyBean = dependencyBean;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>基于Setter方法注入的优点是，可以在实例Bean构造完成后注入，或者重新注入Bean，其中一个应用场景是通过<a href="https://docs.spring.io/spring-framework/docs/current/reference/html/integration.html#jmx">JMX MBean</a>进行管理。</p>
+<h3 id="基于Field的依赖注入"><a href="#基于Field的依赖注入" class="headerlink" title="基于Field的依赖注入"></a>基于Field的依赖注入</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">@Component</span><br><span class="line">public class DemoBean&#123;</span><br><span class="line">    @Autowired</span><br><span class="line">    private DependencyBean dependencyBean;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Spring Framework官方已经不推荐这种依赖注入方法，文档中也去掉了相关的使用说明，编译器也会给出警告 <code>Field injection is not recommended</code>，究其原因，使用Field依赖注入时，有一些弊端：</p>
+<ul>
+<li>相比基于构造函数的依赖注入方式，基于Field的依赖注入无法构造immutable对象，因为如果将dependencyBean声明为final，则必须在构造函数中初始化。</li>
+<li>对单元测试不友好，如果没有对外的set接口，则很难替换mock bean</li>
+</ul>
+<h3 id="如何选择？"><a href="#如何选择？" class="headerlink" title="如何选择？"></a>如何选择？</h3><p>Spring官方推荐使用基于构造函数的依赖注入方式，结合final，可以构建immutable的对象，能够保证所有的依赖都不会为null。而当需要在实例Bean构造完成后注入，或者重新注入Bean时，选择使用Setter方法的注入方式。</p>
+<p>除此之外，当在Bean中使用模版方法，在Abstract类中注入依赖时，需要使用Setter方法注入。</p>
+<h3 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h3><p><a href="https://docs.spring.io/spring-framework/docs/current/reference/html/core.html#beans-dependencies">https://docs.spring.io/spring-framework/docs/current/reference/html/core.html#beans-dependencies</a></p>
+<p><a href="https://blog.marcnuri.com/field-injection-is-not-recommended">https://blog.marcnuri.com/field-injection-is-not-recommended</a></p>
+<p>本文地址： <a href="http://chengco.net/posts/49430/">http://chengco.net/posts/49430/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>Java</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+        <tag>Spring</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>什么是POJO？</title>
+    <url>/posts/55081/</url>
+    <content><![CDATA[<p>Plain Old Java Object， 普通的Java对象，封装业务逻辑，除Java语言规范外，没有任何其他的限制，不与任何框架绑定。</p>
+<span id="more"></span>
+
+<p>反例：</p>
+<ul>
+<li>扩展特定的类，public class GFG extends javax.servlet.http.HttpServlet { … }</li>
+<li>实现特定的接口，public class Bar implements javax.ejb.EntityBean { … }</li>
+<li>包含特定的注解，@javax.persistence.Entity public class Baz { … }</li>
+</ul>
+<p>正例：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Employee</span> &#123;</span><br><span class="line">    <span class="comment">// default field</span></span><br><span class="line">    String name;</span><br><span class="line">    <span class="comment">// public field</span></span><br><span class="line">    <span class="keyword">public</span> String id;</span><br><span class="line">    <span class="comment">// private salary</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> salary;</span><br><span class="line">  </span><br><span class="line">    <span class="comment">//arg-constructor to initialize fields</span></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">Employee</span><span class="params">(String name, String id, <span class="type">double</span> salary)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.name = name;</span><br><span class="line">        <span class="built_in">this</span>.id = id;</span><br><span class="line">        <span class="built_in">this</span>.salary = salary;</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">    <span class="comment">// getter method for name</span></span><br><span class="line">    <span class="keyword">public</span> String <span class="title function_">getName</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> name;</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">    <span class="comment">// getter method for id</span></span><br><span class="line">    <span class="keyword">public</span> String <span class="title function_">getId</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> id;</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">    <span class="comment">// getter method for salary</span></span><br><span class="line">    <span class="keyword">public</span> Double <span class="title function_">getSalary</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> salary;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a href="https://martinfowler.com/bliki/POJO.html">https://martinfowler.com/bliki/POJO.html</a></p>
+<p><a href="https://www.geeksforgeeks.org/pojo-vs-java-beans/#:~:text=POJO%20stands%20for%20Plain%20Old,re%2Dusability%20of%20a%20program">https://www.geeksforgeeks.org/pojo-vs-java-beans/#:~:text&#x3D;POJO stands for Plain Old,re-usability of a program</a>.</p>
+<p>本文地址： <a href="http://chengco.net/posts/55081/">http://chengco.net/posts/55081/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>Java</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>MongoDB-ServerSelectionTimeoutError的问题</title>
+    <url>/posts/65529/</url>
+    <content><![CDATA[<p>如何解决MongoDB-ServerSelectionTimeoutError的问题</p>
+<span id="more"></span>
+
+<h3 id="问题现象"><a href="#问题现象" class="headerlink" title="问题现象"></a>问题现象</h3><p>拉取mongoDB镜像：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">docker pull mongo</span><br></pre></td></tr></table></figure>
+
+<p>按照官方给的命令启动MongoDB的docker实例：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">$ docker run --name some-mongo -d mongo:latest</span><br></pre></td></tr></table></figure>
+
+<p>使用python客户端pymongo执行简单的测试：</p>
+<figure class="highlight python"><table><tr><td class="code"><pre><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    sheet = pymongo.MongoClient(<span class="string">&#x27;127.0.0.1&#x27;</span>, <span class="number">27017</span>)[<span class="string">&#x27;poetry&#x27;</span>][<span class="string">&#x27;poetry&#x27;</span>]</span><br><span class="line">    sheet.insert_one(&#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;test&#x27;</span>&#125;)</span><br></pre></td></tr></table></figure>
+
+<p>会出现ServerSelectionTimeoutError: 127.0.0.1:27017: [Errno 61] Connection refused的错误：</p>
+<blockquote>
+<p>pymongo.errors.ServerSelectionTimeoutError: 127.0.0.1:27017: [Errno 61] Connection refused, Timeout: 30s, Topology Description: &lt;TopologyDescription id: 5fbcd8655e2cdacc38da6dd6, topology_type: Single, servers: [&lt;ServerDescription (‘127.0.0.1’, 27017) server_type: Unknown, rtt: None, error&#x3D;AutoReconnect(‘127.0.0.1:27017: [Errno 61] Connection refused’)&gt;]&gt;</p>
+</blockquote>
+<h3 id="问题分析"><a href="#问题分析" class="headerlink" title="问题分析"></a>问题分析</h3><p>从<code>Connection refused, Timeout</code>可以推断出是由于客户端与服务器无法建立连接，通过 <code>docker ps</code> 查看</p>
+<blockquote>
+<p>CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS                  NAMES<br>ee1d4ac763ff        mongo:latest        “docker-entrypoint.s…”   21 hours ago        Up 7 seconds        27017&#x2F;tcp     some-mongo</p>
+</blockquote>
+<p>可以看到容器实例端口27017，协议tcp，但没有本地映射端口， 所以无法与容器内mongo服务通信。</p>
+<h3 id="正确的使用方式"><a href="#正确的使用方式" class="headerlink" title="正确的使用方式"></a>正确的使用方式</h3><p>第一种方式：使用docker run命令并增加端口映射：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">docker run -p 127.0.0.1:27017:27017 --name some-mongo -d mongo:latest</span><br></pre></td></tr></table></figure>
+
+<p>第一种方式：使用docker-compose方式增加端口映射，官方文档中有示例如下：</p>
+<figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="comment"># Use root/example as user/password credentials</span></span><br><span class="line"><span class="attr">version:</span> <span class="string">&#x27;3.1&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="attr">services:</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">mongo:</span></span><br><span class="line">    <span class="attr">image:</span> <span class="string">mongo</span></span><br><span class="line">    <span class="attr">restart:</span> <span class="string">always</span></span><br><span class="line">    <span class="attr">environment:</span></span><br><span class="line">      <span class="attr">MONGO_INITDB_ROOT_USERNAME:</span> <span class="string">root</span></span><br><span class="line">      <span class="attr">MONGO_INITDB_ROOT_PASSWORD:</span> <span class="string">example</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">mongo-express:</span></span><br><span class="line">    <span class="attr">image:</span> <span class="string">mongo-express</span></span><br><span class="line">    <span class="attr">restart:</span> <span class="string">always</span></span><br><span class="line">    <span class="attr">ports:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="number">8081</span><span class="string">:8081</span></span><br><span class="line">    <span class="attr">environment:</span></span><br><span class="line">      <span class="attr">ME_CONFIG_MONGODB_ADMINUSERNAME:</span> <span class="string">root</span></span><br><span class="line">      <span class="attr">ME_CONFIG_MONGODB_ADMINPASSWORD:</span> <span class="string">example</span></span><br></pre></td></tr></table></figure>
+
+<p>在mongo节点下增加:</p>
+<figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="attr">ports:</span></span><br><span class="line">   <span class="bullet">-</span> <span class="number">27017</span><span class="string">:27017</span></span><br></pre></td></tr></table></figure>
+
+<p>mongo-express提供了monggoDB的管理功能。</p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>如果希望主机与容器实例通信，需要增加端口映射，容器间的通信则不需要。</p>
+<p>本文地址： <a href="http://chengco.net/posts/65529/">http://chengco.net/posts/65529/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>日常踩坑</category>
+      </categories>
+      <tags>
+        <tag>mongoDB</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>How to answer &quot;how is going?&quot;</title>
+    <url>/posts/38057/</url>
+    <content><![CDATA[<p>At the beginning of the conversation, people could say:</p>
+<ul>
+<li>“How are you? “</li>
+<li>“How are you doing?”</li>
+<li>“How is it going?” </li>
+<li>“Hey, how is going?”</li>
+</ul>
+<p>how to answer these questions under this situation? what should I say? It confuses me a lot until I know there are no much different among these expressions.</p>
+<span id="more"></span>
+<p>Most of the time, when people say “how is it going”, it’s just a greeting like say “Hi”. It’s not really a real question, people are not asking you to give them some stories of your life. It’s just a simple greeting.</p>
+<p>You can answer: </p>
+<ul>
+<li>Pretty good.</li>
+<li>I’m good&#x2F;great.</li>
+<li>It’s going pretty good. Thanks. yourself?</li>
+<li>It’s going alright, how about you?</li>
+<li>I’m doing good&#x2F;great. and you?</li>
+</ul>
+<p>Basically, there are three parts in the answer. First part is to answer the question, second part is to say thanks, the last part is to ask back “how are you” or “how are you doing”. It’s very polite to ask someone back “how is it going?” you? yourself? and you? and yourself? how about you? how about yourself? there are a lot of different options, you don’t need memorize one, you can choose any of them.</p>
+<p>For the answers above, they are all positive. In most cases, should give a positive answer, also you can give a negative answer if you want, like</p>
+<ul>
+<li>Things have been better</li>
+<li>It’s not going too great</li>
+<li>Today’s not going very well, How about you?</li>
+</ul>
+<p>Maybe you feel sick, maybe lose something.</p>
+<p>本文地址： <a href="http://chengco.net/posts/38057/">http://chengco.net/posts/38057/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>Learning English</category>
+      </categories>
+      <tags>
+        <tag>Learning English</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>细说 LSP（里氏替换原则）</title>
+    <url>/posts/37579/</url>
+    <content><![CDATA[<p>曾经在一次给新入职员工做Java开发的课程培训，讲到面向对象的SOLID设计原则时，大家普遍认为”里氏替换原则”是其中最难理解的一个。也许直接上UML并不是一个好的解释方法，从头说起才能弄清来龙去脉。</p>
+<span id="more"></span>
+
+<h2 id="为什么叫里氏替换原则？"><a href="#为什么叫里氏替换原则？" class="headerlink" title="为什么叫里氏替换原则？"></a>为什么叫里氏替换原则？</h2><p>里氏替换原则在SOLID这五个设计原则中是比较特殊的存在：</p>
+<ul>
+<li>如果违反了里氏替换原则，不只是降低软件设计的优雅性，很可能会导致Bug</li>
+<li>只有里氏替换原则是以人名命令的</li>
+</ul>
+<p>里氏替换原则译自Liskov substitution principle。Liskov是一位计算机科学家，也就是Barbara Liskov，麻省理工学院教授，也是美国第一个计算机科学女博士，师从图灵奖得主John McCarthy教授，人工智能概念的提出者。</p>
+<p>里氏替换原则最初由Barbara Liskov在1987年的一次学术会议中提出，而真正正式发表是在1994年，Barbara Liskov 和 Jeannette Wing发表的一篇学术论文《A behavioral notion of subtyping》.</p>
+<h2 id="什么是里氏替换原则？"><a href="#什么是里氏替换原则？" class="headerlink" title="什么是里氏替换原则？"></a>什么是里氏替换原则？</h2><p>里氏替换原则在1994年Barbara Liskov 和 Jeannette Wing发表论文中的描述是：</p>
+<blockquote>
+<p>If S is a declared subtype of T, objects of type S should behave as objects of type T are expected to behave, if they are treated as objects of type T</p>
+</blockquote>
+<p>从字面上翻译：如果S是T的子类型，对于S类型的任意对象，如果将他们看作是T类型的对象，则对象的行为也理应与期望的行为一致。</p>
+<p>而另一种关于里氏替换原则的描述为Robert Martin在《敏捷软件开发：原则、模式与实践》一书中对原论文的解读：子类型（subtype）必须能够替换掉他们的基类型（base type）。这个是更简明的一种表述。</p>
+<h2 id="如何理解里氏替换原则？"><a href="#如何理解里氏替换原则？" class="headerlink" title="如何理解里氏替换原则？"></a>如何理解里氏替换原则？</h2><p>不管是Barbara Liskov论文中的表述，还是Robert Martin的解读，都是比较抽象的表达。要理解里氏替换原则，其实就是要理解两个问题：</p>
+<ul>
+<li>什么是替换？</li>
+<li>什么是与期望行为一致的替换（Robert Martin所说的“必须能够替换”）？</li>
+</ul>
+<h3 id="什么是替换"><a href="#什么是替换" class="headerlink" title="什么是替换"></a>什么是替换</h3><p>替换的前提是面向对象语言所支持的多态特性，同一个行为具有多个不同表现形式或形态的能力。以JDK的集合框架为例，<code>List</code>接口的定义为有序集合，<code>List</code>接口有多个派生类，比如大家耳熟能详的<code>ArrayList</code>, <code>LinkedList</code>。那当某个方法参数或变量是<code>List</code>接口类型时，既可以是<code>ArrayList</code>的实现, 也可以是<code>LinkedList</code>的实现，这就是替换。</p>
+<p>举个简单的例子：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> String <span class="title function_">getFirst</span><span class="params">(List&lt;String&gt; values)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> values.get(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>getFirst</code>方法，接受一个<code>List</code>接口类型的参数，那既可以传递一个<code>ArrayList</code>类型的参数：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">List&lt;String&gt; values = <span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line">values.add(<span class="string">&quot;a&quot;</span>);</span><br><span class="line">values.add(<span class="string">&quot;b&quot;</span>);</span><br><span class="line"><span class="type">String</span> <span class="variable">firstValue</span> <span class="operator">=</span> getFirst(values);</span><br></pre></td></tr></table></figure>
+
+<p>又可以接收一个<code>LinkedList</code>参数：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">List&lt;String&gt; values = <span class="keyword">new</span> <span class="title class_">LinkedList</span>&lt;&gt;();</span><br><span class="line">values.add(<span class="string">&quot;a&quot;</span>);</span><br><span class="line">values.add(<span class="string">&quot;b&quot;</span>);</span><br><span class="line"><span class="type">String</span> <span class="variable">firstValue</span> <span class="operator">=</span> getFirst(values);</span><br></pre></td></tr></table></figure>
+
+<h3 id="什么是与期望行为一致的替换？"><a href="#什么是与期望行为一致的替换？" class="headerlink" title="什么是与期望行为一致的替换？"></a>什么是与期望行为一致的替换？</h3><p>在不了解派生类的情况下，仅通过接口或基类的方法，即可清楚的知道方法的行为，而不管哪种派生类的实现，都与接口或基类方法的期望行为一致。或者说接口或基类的方法是一种契约，使用方按照这个契约来使用，派生类也按照这个契约来实现。这就是与期望行为一致的替换。继续以上节中的例子说明：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> String <span class="title function_">getFirst</span><span class="params">(List&lt;String&gt; values)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> values.get(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>getFirst</code>方法，接收<code>List</code>类型的参数，而<code>List</code>类型的<code>get</code>方法返回特定位置的元素，对于本例即为第一个元素。这些是不依赖派生类的知识的。所以对于上节中的示例，不管是<code>ArrayList</code>类型的实现，还是<code>LinkedList</code>的实现，<code>getFirst</code>方法最终的返回值是一样的。这就是与期望行为一致的替换。</p>
+<h2 id="违反里氏替换原则的场景"><a href="#违反里氏替换原则的场景" class="headerlink" title="违反里氏替换原则的场景"></a>违反里氏替换原则的场景</h2><p>从直观上可能觉得派生类对象可以在替换其基类对象是理所当然的，但会有出现一些场景有意无意地违反了里氏替换原则。</p>
+<h3 id="子类中抛出了基类未定义的异常"><a href="#子类中抛出了基类未定义的异常" class="headerlink" title="子类中抛出了基类未定义的异常"></a>子类中抛出了基类未定义的异常</h3><p>还以JDK的集合框架为例，如果自定义一个List的派生类，如下：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">CustomList</span>&lt;T&gt; <span class="keyword">extends</span> <span class="title class_">ArrayList</span>&lt;T&gt; &#123;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> T <span class="title function_">get</span><span class="params">(<span class="type">int</span> index)</span> &#123;</span><br><span class="line">        <span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">UnsupportedOperationException</span>();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>仅重写get方法，throw一个<code>UnsupportedOperationException</code>，因为<code>List</code>接口关于get方法的描述，仅会抛出<code>IndexOutOfBoundsException</code>, throw <code>UnsupportedOperationException</code>的行为并不是基类所期望的，即违反了里氏替换原则，</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Returns the element at the specified position in this list.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> index index of the element to return</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> the element at the specified position in this list</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IndexOutOfBoundsException if the index is out of range</span></span><br><span class="line"><span class="comment">     *         (&#123;<span class="doctag">@code</span> index &lt; 0 || index &gt;= size()&#125;)</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    E <span class="title function_">get</span><span class="params">(<span class="type">int</span> index)</span>;</span><br></pre></td></tr></table></figure>
+
+<h3 id="子类改变了基类方法的语义或引入了副作用"><a href="#子类改变了基类方法的语义或引入了副作用" class="headerlink" title="子类改变了基类方法的语义或引入了副作用"></a>子类改变了基类方法的语义或引入了副作用</h3><p>同样，如果自定义另一个List的派生类，如下：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">CustomList</span>&lt;T&gt; <span class="keyword">extends</span> <span class="title class_">ArrayList</span>&lt;T&gt; &#123;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> T <span class="title function_">get</span><span class="params">(<span class="type">int</span> index)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (index &gt;= size())&#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> get(index);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>仅重写get方法，当输入index大于当前list的size时，返回null，而不抛出<code>IndexOutOfBoundsException</code>, 因为<code>List</code>接口关于get方法的描述，当index超出范围时抛出<code>IndexOutOfBoundsException</code>，所以改变了基类方法的语义，即违反了里氏替换原则。</p>
+<h2 id="违反里氏替换原则的危害"><a href="#违反里氏替换原则的危害" class="headerlink" title="违反里氏替换原则的危害"></a>违反里氏替换原则的危害</h2><p>当我们违反了这一原则会带来有一些危害：</p>
+<ul>
+<li>反直觉。期望所有子类行为是一致的，但如果不一致可能需要文档记录，或者在代码跑失败后涨此知识；</li>
+<li>不可读。如果子类行为不一致，可能需要不同的逻辑分支来适配不同的行为，徒增代码复杂度；</li>
+<li>不可用。可能出错的地方终将会出错。</li>
+</ul>
+<h2 id="如何避免违反里氏替换原则"><a href="#如何避免违反里氏替换原则" class="headerlink" title="如何避免违反里氏替换原则"></a>如何避免违反里氏替换原则</h2><p>谈到如何避免，当然要基于里氏替换原则的定义，<code>与期望行为一致的替换</code>。</p>
+<ul>
+<li>从行为出发来设计。在做抽象或设计时，不只是要从模型概念出发，还要从行为出发，比如一个经典的例子，正方形和长方形，从现实的概念中正方形是一个长方形，但是在计算其面积的行为上是不一致的。</li>
+<li>基于契约设计。这个契约即是基类方法签名、功能描述、参数类型、返回值等。在派生类的实现时，时刻保持派生类与基类的契约不被破坏。</li>
+</ul>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ol>
+<li><a href="https://en.wikipedia.org/wiki/Liskov_substitution_principle">https://en.wikipedia.org/wiki/Liskov_substitution_principle</a></li>
+<li><a href="https://reflectoring.io/lsp-explained/">https://reflectoring.io/lsp-explained/</a></li>
+<li><a href="https://medium.com/hackernoon/liskov-substitution-principle-a982551d584a">https://medium.com/hackernoon/liskov-substitution-principle-a982551d584a</a></li>
+<li>《敏捷软件开发：原则、模式与实践》</li>
+</ol>
+<p>本文地址： <a href="http://chengco.net/posts/37579/">http://chengco.net/posts/37579/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>设计原则</category>
+      </categories>
+      <tags>
+        <tag>设计原则</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Lombok踩过的坑</title>
+    <url>/posts/23605/</url>
+    <content><![CDATA[<p>Lombok是一个比较流行的Java类库，可以减少大量的重复代码或者模版代码，提高生产力，也使代码看起来更简洁。但如果不清楚实现机制，可能会出现意想不到的bug，最近在项目上遇到几个这样的坑。</p>
+<span id="more"></span>
+
+<h2 id="Builder"><a href="#Builder" class="headerlink" title="@Builder"></a>@Builder</h2><p>@Builder注解提供了很方便的通过Builder模式构建一个对象的功能. 比如下面的例子:</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Builder</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> UUID id;</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当我们构造一个User对象时，我们可以这样写:</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="type">User</span> <span class="variable">build</span> <span class="operator">=</span> User.builder()</span><br><span class="line">                .id(<span class="string">&quot;12&quot;</span>)</span><br><span class="line">                .name(<span class="string">&quot;testName&quot;</span>)</span><br><span class="line">                .build();</span><br></pre></td></tr></table></figure>
+
+<h3 id="变量初始化问题"><a href="#变量初始化问题" class="headerlink" title="变量初始化问题"></a>变量初始化问题</h3><p>对于某些字段会有初始值是一个固定值或可以自动生成的场景，比如我们希望每次build一个新的User对象时给id生成一个初始值，直观上说我们希望通过下面的代码来实现：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Builder</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>理想的情况上面代码中的<code>private UUID id = UUID.randomUUID();</code>会起到生成初始值的效果，但其实并没有, 如下是编译后生成的代码, 可以看到生成的UserBuilder类的id变量并没有初始值，而在执行build方法时会new一个User对象，这是如果没有显式的指定id，则build出来的User对象的id就会是null。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line"></span><br><span class="line">    User(<span class="keyword">final</span> UUID id, <span class="keyword">final</span> String name) &#123;</span><br><span class="line">        <span class="built_in">this</span>.id = id;</span><br><span class="line">        <span class="built_in">this</span>.name = name;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> User.UserBuilder <span class="title function_">builder</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">User</span>.UserBuilder();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">UserBuilder</span> &#123;</span><br><span class="line">        <span class="keyword">private</span> UUID id;</span><br><span class="line">        <span class="keyword">private</span> String name;</span><br><span class="line"></span><br><span class="line">        UserBuilder() &#123;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User.UserBuilder <span class="title function_">id</span><span class="params">(<span class="keyword">final</span> UUID id)</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.id = id;</span><br><span class="line">            <span class="keyword">return</span> <span class="built_in">this</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User.UserBuilder <span class="title function_">name</span><span class="params">(<span class="keyword">final</span> String name)</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.name = name;</span><br><span class="line">            <span class="keyword">return</span> <span class="built_in">this</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User <span class="title function_">build</span><span class="params">()</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">User</span>(<span class="built_in">this</span>.id, <span class="built_in">this</span>.name);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>好在如果按上面的代码来写初始值的赋值，在编译时Lombok会产生一条警告，提示@Builder会忽略此初始值，建议使用@Builder.Default</p>
+<blockquote>
+<p>@Builder will ignore the initializing expression entirely. If you want the initializing expression to serve as default, add @Builder.Default</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Builder</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> &#123;</span><br><span class="line">    <span class="meta">@Builder</span>.Default</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>编译后生成的代码：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> UUID id;</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> UUID $<span class="keyword">default</span>$id() &#123;</span><br><span class="line">        <span class="keyword">return</span> UUID.randomUUID();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    User(<span class="keyword">final</span> UUID id, <span class="keyword">final</span> String name) &#123;</span><br><span class="line">        <span class="built_in">this</span>.id = id;</span><br><span class="line">        <span class="built_in">this</span>.name = name;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> User.UserBuilder <span class="title function_">builder</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">User</span>.UserBuilder();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> String <span class="title function_">toString</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;User(id=&quot;</span> + <span class="built_in">this</span>.id + <span class="string">&quot;, name=&quot;</span> + <span class="built_in">this</span>.name + <span class="string">&quot;)&quot;</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">UserBuilder</span> &#123;</span><br><span class="line">        <span class="keyword">private</span> <span class="type">boolean</span> id$set;</span><br><span class="line">        <span class="keyword">private</span> UUID id;</span><br><span class="line">        <span class="keyword">private</span> String name;</span><br><span class="line"></span><br><span class="line">        UserBuilder() &#123;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User.UserBuilder <span class="title function_">id</span><span class="params">(<span class="keyword">final</span> UUID id)</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.id = id;</span><br><span class="line">            <span class="built_in">this</span>.id$set = <span class="literal">true</span>;</span><br><span class="line">            <span class="keyword">return</span> <span class="built_in">this</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User.UserBuilder <span class="title function_">name</span><span class="params">(<span class="keyword">final</span> String name)</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.name = name;</span><br><span class="line">            <span class="keyword">return</span> <span class="built_in">this</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">public</span> User <span class="title function_">build</span><span class="params">()</span> &#123;</span><br><span class="line">            <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> <span class="built_in">this</span>.id;</span><br><span class="line">            <span class="keyword">if</span> (!<span class="built_in">this</span>.id$set) &#123;</span><br><span class="line">                id = User.$<span class="keyword">default</span>$id();</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">User</span>(id, <span class="built_in">this</span>.name);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>为id增加了<code>@Builder.Default</code>注解后自然初始值是可以被赋值的，可以看到Lombok为User类生成了一个<code>$default$id</code>方法，将初始值通过这个方法返回，而build User对象时，会检查id是否被赋值，如果未被赋值则会通过<code>$default$id</code>取id的初始值。</p>
+<h3 id="Builder与其他注解的使用"><a href="#Builder与其他注解的使用" class="headerlink" title="@Builder与其他注解的使用"></a>@Builder与其他注解的使用</h3><p>构建者模式通常用于构造一个复杂对象，不暴露内部状态，而如果自己来实现的话，正常来讲不会提供构造函数，但是当使用Lombok时，添加构造函数或Get&#x2F;Set方法变得并不是那么明显，需要的时候加一个注解就搞定来。这样可能会导致注解的泛滥，如下面的例子。Lombok官方也不推荐这样的用法，对@Builder注解的说明是不建议与构造函数注解和<code>@EqualsAndHashCode</code>一起使用的。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@ToString</span></span><br><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="meta">@Builder</span></span><br><span class="line"><span class="meta">@AllArgsConstructor</span></span><br><span class="line"><span class="meta">@NoArgsConstructor</span></span><br><span class="line"><span class="meta">@EqualsAndHashCode</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> <span class="keyword">implements</span> <span class="title class_">Serializable</span> &#123;</span><br><span class="line">    <span class="meta">@Builder</span>.Default</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="toBuilder浅拷贝"><a href="#toBuilder浅拷贝" class="headerlink" title="toBuilder浅拷贝"></a>toBuilder浅拷贝</h3><p>使用<code>@Builder(toBuilder = true)</code>可以获取Builder，并多次调用build来构造对象，但需要注意的是这种方式构造的对象只能保证对象的浅拷贝，深层的对象还是同样的引用。</p>
+<h2 id="NonNull"><a href="#NonNull" class="headerlink" title="@NonNull"></a>@NonNull</h2><p>@NonNull可以使用在实例变量&#x2F;参数&#x2F;方法上以做非null检查，这个注解并不是一个注释，而是会在所有使用的地方切实的注入null检查，如果检测结果为null则抛出NullPointerException. 反而显式的null-check是更好的选择。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> <span class="keyword">implements</span> <span class="title class_">Serializable</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="meta">@NonNull</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>编译后生成的代码：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">User</span> <span class="keyword">implements</span> <span class="title class_">Serializable</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">UUID</span> <span class="variable">id</span> <span class="operator">=</span> UUID.randomUUID();</span><br><span class="line">    <span class="meta">@NonNull</span></span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">User</span><span class="params">(<span class="meta">@NonNull</span> <span class="keyword">final</span> String name)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (name == <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">NullPointerException</span>(<span class="string">&quot;name is marked non-null but is null&quot;</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.name = name;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> UUID <span class="title function_">getId</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">this</span>.id;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@NonNull</span></span><br><span class="line">    <span class="keyword">public</span> String <span class="title function_">getName</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">this</span>.name;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">setName</span><span class="params">(<span class="meta">@NonNull</span> <span class="keyword">final</span> String name)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (name == <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">NullPointerException</span>(<span class="string">&quot;name is marked non-null but is null&quot;</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="built_in">this</span>.name = name;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
+<li>使用<code>@Builder.Default</code>初始化变量</li>
+<li>@Builder要注意与其他注解的使用，特别是构造函数和<code>@EqualsAndHashCode</code></li>
+<li>使用<code>@Builder(toBuilder = true)</code> 只能实现浅拷贝</li>
+<li>@NonNull，如果检测结果为null则抛出NullPointerException. 反而显式的null-check是更好的选择。</li>
+</ul>
+<p>本文地址： <a href="http://chengco.net/posts/23605/">http://chengco.net/posts/23605/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>日常踩坑</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+        <tag>Lombok</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>读《影响力》：我们的行为是如何被改变的？</title>
+    <url>/posts/56537/</url>
+    <content><![CDATA[<p>我们经常通过网络上或媒体能听到关于影响力的表述，比如这样的说法：</p>
+<ul>
+<li>西安全球影响力国内第四,远超广州和深圳,为何GDP却有差距？</li>
+<li>如何增强舆论引导的吸引力和影响力</li>
+<li>鄂尔多斯一原副局长靠影响力做生意，念歪了“权力经”</li>
+<li>口碑就是影响力</li>
+<li>影响力营销</li>
+</ul>
+<p>《影响力》这本书并没有对影响力下定义，那究竟什么是影响力呢？为什么我们的行为或思想会被影响，提升影响力到底提升的是什么？</p>
+<span id="more"></span>
+
+<h3 id="定义"><a href="#定义" class="headerlink" title="定义"></a>定义</h3><p>关于影响力的定义：</p>
+<blockquote>
+<p>影响力是用一种别人所乐于接受的方式，改变他人的思想和行动的能力。影响力又被解释为战略影响、印象管理、善于表现的能力、目标的说服力以及合作促成的影响力等。</p>
+</blockquote>
+<p>如何理解这句话呢？主要在说这几方面内容：</p>
+<ul>
+<li>影响力是一种让人信服的能力；</li>
+<li>目的是为推动他人达成个人所期望的目标；</li>
+<li>印象管理也是一种影响力：试图管理和控制他人对自己所形成的印象的过程；</li>
+<li>说服力也是一种影响力：说话者运用各种可能的技巧去说服受众的能力。</li>
+</ul>
+<h3 id="构成"><a href="#构成" class="headerlink" title="构成"></a>构成</h3><ul>
+<li>权力性影响力又称为强制性影响力，它主要源于法律、职位、习惯和武力等等。权力性影响力对人的影响带有强迫性、不可抗拒性，它是通过外推力的方式发挥其作用。<br>构成权力性影响力的因素主要有：法律；职位；习惯；暴力。</li>
+<li>非权力性影响力也称非强制性影响力，它主要来源于领导者个人的人格魅力，来源于领导者与被领导者之间的相互感召和相互信赖。<br>构成非权力性影响力的因素主要有：品格因素；才能因素；知识因素；情感因素。</li>
+</ul>
+<h2 id="影响力是怎么发挥作用的？"><a href="#影响力是怎么发挥作用的？" class="headerlink" title="影响力是怎么发挥作用的？"></a>影响力是怎么发挥作用的？</h2><p>我们的决定或选择被改变很多时候是在不自知或者下意识的情况下发生的。在很多情况下我们选择这样的方式来提高效率。心理学家发现了很多我们在日常生活中经常用到的捷径，他们把这些捷径称为“启发式判断”。</p>
+<blockquote>
+<p>启发式判断，是指在不确定条件下，人类会根据以往（相同的或类试的甚至是无关的）经验来对当前情况进行判断。启发式既可以得出正确的推理结果也有可能导致错误的结论，也就是说过去的经验既可能有利于我们快速的作出判断，也有可能对我们的判断产生干扰。</p>
+</blockquote>
+<p>记得小时候问母亲，市场上那么多卖家，是怎么选择买哪家的呢？母亲给我的答案很简单：哪家人多买哪家。靠买家多有一个简单的判断，要么质优，要么价廉。这条规则哪怕放到现在也是适用的，即使是网络购物的方式，依然可以通过成交数量、价格、评分等来选择卖家。<br>还有一条捷径是以“专家的话一定是对的”这一规则为基础的。只要一个人拥有专家的地位，不管他的意见是否有道理，我们都会赞同和拥护，特别是当我们对某个领域没有判断力的时候。当我们面临选择时，这些规则就会悄悄地发挥作用，当然这些规则也会被利用来改变我们的选择。</p>
+<h3 id="对比原理"><a href="#对比原理" class="headerlink" title="对比原理"></a>对比原理</h3><p>对比原理影响我们对先后接触到的两件东西之间差别的判断。简单说来，如果两件东西很不一样，我们会趋向于认为它们之间的差别比实际的更大。书中提到一个服装销售的案例：如果一个人刚刚花了很多钱买一套套装，等到挑选毛衣时，即使是贵的毛衣也显得不贵了。仔细想想，其实生活中也不止一次遇到类似的事情，比如：快餐店的套餐价格与套餐内单品的合计价格相比会少很多，这时候，我们往往会选择套餐，即便套餐内的某些单品并不是我们所需要的。</p>
+<p>社会心理学中有一种讨价方式是以退为进法。劝说者通过提出一个会被拒绝的离谱要求来让被劝说者同意第二个较为合理的请求，较之单独提出“合理的请求”更容易获接受。</p>
+<p>对比原理生效的因素：</p>
+<ul>
+<li>两者差异很大，不管是两种行为、两件东西或者其他。</li>
+<li>期望的结果：价格更低或更合理的更容易被接受。</li>
+</ul>
+<h2 id="影响力的原理"><a href="#影响力的原理" class="headerlink" title="影响力的原理"></a>影响力的原理</h2><h3 id="互惠"><a href="#互惠" class="headerlink" title="互惠"></a>互惠</h3><p>互惠原理认为，我们应该尽量以相同的方式回报他人为我们所做的一切。互惠原理在人类文明中几乎无处不在。互惠原理的威力在于，即使是一个陌生人，或者是一个不讨人喜欢或不受欢迎的人，如果先施予我们一点小小的恩惠然后再提出自己的要求，也会大大提高我们答应这个要求的可能性。</p>
+<h4 id="拒绝—退让策略"><a href="#拒绝—退让策略" class="headerlink" title="拒绝—退让策略"></a>拒绝—退让策略</h4><p>利用互惠原理来使他人答应自己的请求还有另一种方式。与给人一点好处然后要求他们回报的直截了当的方式相比，这种方式比较微妙，即：如果你拒绝了他人的请求，而此时他换之一个更小的请求，因为妥协也可以是一个互惠的过程，因此人们可以先主动做出一个让步，以迫使对方也做出让步，从而达到自己的目的。假定你想要我同意你的某个请求，一个可以增加你的胜算的办法就是先提出一个比较大的、我极可能会拒绝的请求。然后，在我拒绝了这个请求之后，你再提出那个小一些的、你真正感兴趣的请求。如果你的请求提得很巧妙，我就会认为你的第二个请求是你做出的一个妥协，因而会觉得我也应该做出一个妥协。而我眼前就有一个这样的机会——我可以同意你的第二个请求。</p>
+<p>对比原理中提到的以退为进法其实也是拒绝-退让策略。</p>
+<h4 id="感想"><a href="#感想" class="headerlink" title="感想"></a>感想</h4><p>这不就是“将欲取之，必先予之”吗，如果要想取得对方的东西，必须暂时先给对方一些东西。</p>
+<h3 id="承诺和一致"><a href="#承诺和一致" class="headerlink" title="承诺和一致"></a>承诺和一致</h3><p>承诺和一致原理是指我们倾向于与我们过去的所作所为保持一致，一旦我们主动做出了承诺，自我形象就会受到一致性原理的双重压力，一方面是来自内心的压力，它迫使我们所作所为要与我们的形象保持一致，另一方面来自外界的压力，它要求我们要按照他人的看法来调整自己的形象。</p>
+<h4 id="感想-1"><a href="#感想-1" class="headerlink" title="感想"></a>感想</h4><p>这不就是所谓的“吹出去的牛，含着泪也要实现吗”，只不过不同的是，要让对方把牛吹出来。</p>
+<h3 id="社会认同"><a href="#社会认同" class="headerlink" title="社会认同"></a>社会认同</h3><p>社会认同原理指出，我们进行是非判断的标准之一就是看别人是怎么想的，尤其是当我们要决定什么是正确的行为的时候。如果我们看到别人在某种场合做某件事情，我们就会断定这样做是有道理的。<br>比如广告商最喜欢告诉我们一种产品增长最快或销售最旺，因为这时候他们不必直接说服我们该产品品质优良，而只需说许多其他人都这样认为，这个证据就已经很充分了。耳熟能详的“一年卖出3亿杯”、“XXX领导品牌”</p>
+<h3 id="喜好"><a href="#喜好" class="headerlink" title="喜好"></a>喜好</h3><p>喜好原理指出，人们总是比较愿意答应自己认识和喜爱的人提出的要求。</p>
+<ul>
+<li>外表的吸引力，外表漂亮的人能够让旁观者自动地、不假思索地产生一种正面反应，这就是社会科学家所说的“光环效应”。所谓光环效应，是指一个人的一个正面特征会主导人们对这个人的整体看法。</li>
+<li>相似性，我们通常都会对与自己相似的人更有好感，不管这种相似是在观点、个性、背景，还是生活方式上。因此，对那些想要博得我们的喜爱的人来说，把自己装扮成与我们相似的样子可以是帮助他们达到目的的一条非常有效的途径。</li>
+<li>称赞，我们对于称赞也有一种自动的正面反应，即使人家很明显是在别有用心地博取我们的欢心。</li>
+<li>接触和合作，一般来说，我们总是比较喜欢自己熟悉的东西。</li>
+</ul>
+<h3 id="权威"><a href="#权威" class="headerlink" title="权威"></a>权威</h3><p>权威原理指出，我们倾向于认同专家或权威的观点和建议，即使可能只是通过职位&#x2F;头衔&#x2F;衣着伪装出来的专家。对头衔的重视，其实是缺乏识别能力。没有识别能力的人，才会将真才实学建立在一个空虚的头衔上。</p>
+<h3 id="稀缺"><a href="#稀缺" class="headerlink" title="稀缺"></a>稀缺</h3><p>稀缺原理指出机会越少、价值就越高，越稀缺的事物越有价值，也就是所谓的“物以稀为贵”。原因是可能会失去某种东西的想法在人们的决策过程中发挥着重要作用。实际上，害怕失去某种东西的想法比希望得到同等价值东西的想法对人们的激励作用更大。 </p>
+<p>比如：饥饿营销，创造稀缺效应，从而造成物以稀为贵的处境，来达到人们做出购买决策的目的。</p>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ol>
+<li><p><a href="https://wiki.mbalib.com/wiki/%E5%8D%B0%E8%B1%A1%E7%AE%A1%E7%90%86">印象管理</a></p>
+</li>
+<li><p><a href="https://baike.baidu.com/item/%E5%BD%B1%E5%93%8D%E5%8A%9B/3348?fr=aladdin">影响力</a></p>
+</li>
+<li><p>[启发式判断](</p>
+</li>
+</ol>
+<p>本文地址： <a href="http://chengco.net/posts/56537/">http://chengco.net/posts/56537/</a> ，转载请注明出处。</p>
+]]></content>
+      <categories>
+        <category>读书</category>
+      </categories>
+      <tags>
+        <tag>影响力</tag>
+      </tags>
+  </entry>
+</search>

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#123456"><meta name="generator" content="Hexo 5.4.2">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/WechatIMG9.jpeg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/WechatIMG9.jpeg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/WechatIMG9.jpeg">
+  <link rel="mask-icon" href="/images/WechatIMG9.jpeg" color="#123456">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" integrity="sha256-DfWjNxDkM94fVBWx1H5BMMp0Zq7luBlV8QRcSES7s+0=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"chengco.net","root":"/","images":"/images","scheme":"Pisces","darkmode":false,"version":"8.12.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="本文主要涉及java.util.stream包的代码, Stream的创建与执行，所使用JDK源码版本为jdk-11.0.3.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="JDK源码阅读-Stream的创建与执行">
+<meta property="og:url" content="http://chengco.net/posts/52053/index.html">
+<meta property="og:site_name" content="chengco">
+<meta property="og:description" content="本文主要涉及java.util.stream包的代码, Stream的创建与执行，所使用JDK源码版本为jdk-11.0.3.">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://chengco.net/images/stream-class.png">
+<meta property="og:image" content="http://chengco.net/images/stream.dio.png">
+<meta property="article:published_time" content="2020-11-26T14:30:49.000Z">
+<meta property="article:modified_time" content="2022-07-15T06:07:39.132Z">
+<meta property="article:author" content="chengco">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="JDK">
+<meta property="article:tag" content="Stream">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://chengco.net/images/stream-class.png">
+
+
+<link rel="canonical" href="http://chengco.net/posts/52053/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"http://chengco.net/posts/52053/","path":"posts/52053/","title":"JDK源码阅读-Stream的创建与执行"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>JDK源码阅读-Stream的创建与执行 | chengco</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-NW7EV2GJMQ"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"G-NW7EV2GJMQ","only_pageview":false}</script>
+  <script src="/js/third-party/analytics/google-analytics.js"></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js"></script>
+  <script async src="https://hm.baidu.com/hm.js?bb70f61cbe78c43290389df8aa18a476"></script>
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">chengco</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">总结 沉淀 记录</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#JDK%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB-Stream%E7%9A%84%E5%88%9B%E5%BB%BA%E4%B8%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">1.</span> <span class="nav-text">JDK源码阅读-Stream的创建与执行</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%99%E5%9C%A8%E5%89%8D%E9%9D%A2"><span class="nav-number">1.1.</span> <span class="nav-text">写在前面</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E8%A7%88"><span class="nav-number">1.2.</span> <span class="nav-text">总览</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Stream%E7%9B%B8%E5%85%B3%E7%9A%84%E7%B1%BB%E4%B8%8E%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.2.1.</span> <span class="nav-text">Stream相关的类与接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Stream-pipeline"><span class="nav-number">1.2.2.</span> <span class="nav-text">Stream pipeline</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stream%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">1.3.</span> <span class="nav-text">Stream源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Stream%E7%9A%84%E5%88%9B%E5%BB%BA"><span class="nav-number">1.3.1.</span> <span class="nav-text">Stream的创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Stream%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B"><span class="nav-number">1.3.2.</span> <span class="nav-text">Stream执行过程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#distinct"><span class="nav-number">1.3.2.1.</span> <span class="nav-text">distinct</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#map"><span class="nav-number">1.3.2.2.</span> <span class="nav-text">map</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#parallel"><span class="nav-number">1.3.2.3.</span> <span class="nav-text">parallel</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#forEach"><span class="nav-number">1.3.2.4.</span> <span class="nav-text">forEach</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">1.4.</span> <span class="nav-text">总结</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="chengco"
+      src="/images/WechatIMG1.jpeg">
+  <p class="site-author-name" itemprop="name">chengco</p>
+  <div class="site-description" itemprop="description">但行好事，莫问前程</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">9</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">10</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/chengco" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;chengco" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:531903260@qq.com" title="E-Mail → mailto:531903260@qq.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.zhihu.com/people/chengco" title="知乎 → https:&#x2F;&#x2F;www.zhihu.com&#x2F;people&#x2F;chengco" rel="noopener" target="_blank">知乎</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://chengco.net/posts/52053/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/WechatIMG1.jpeg">
+      <meta itemprop="name" content="chengco">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="chengco">
+      <meta itemprop="description" content="但行好事，莫问前程">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="JDK源码阅读-Stream的创建与执行 | chengco">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          JDK源码阅读-Stream的创建与执行
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2020-11-26 22:30:49" itemprop="dateCreated datePublished" datetime="2020-11-26T22:30:49+08:00">2020-11-26</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2022-07-15 14:07:39" itemprop="dateModified" datetime="2022-07-15T14:07:39+08:00">2022-07-15</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" itemprop="url" rel="index"><span itemprop="name">源码阅读</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv">
+      <span class="post-meta-item-icon">
+        <i class="far fa-eye"></i>
+      </span>
+      <span class="post-meta-item-text">阅读次数：</span>
+      <span id="busuanzi_value_page_pv"></span>
+    </span>
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>8.5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <p>本文主要涉及java.util.stream包的代码, Stream的创建与执行，所使用JDK源码版本为jdk-11.0.3.</p>
+<span id="more"></span>
+
+<h1 id="JDK源码阅读-Stream的创建与执行"><a href="#JDK源码阅读-Stream的创建与执行" class="headerlink" title="JDK源码阅读-Stream的创建与执行"></a>JDK源码阅读-Stream的创建与执行</h1><h2 id="写在前面"><a href="#写在前面" class="headerlink" title="写在前面"></a>写在前面</h2><p>本文主要涉及java.util.stream包的代码，所使用JDK源码版本为jdk-11.0.3.</p>
+<p>一个简单的Stream例子：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> java.util.stream.Stream;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Test</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> &#123;</span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line"></span><br><span class="line">        System.out.println();</span><br><span class="line"></span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line"></span><br><span class="line">        System.out.println();</span><br><span class="line"></span><br><span class="line">        Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEachOrdered(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<blockquote>
+<p>2 4 6 8 10 12 14 16 18<br>12 10 14 6 18 8 4 2 16<br>2 4 6 8 10 12 14 16 18 </p>
+</blockquote>
+<h2 id="总览"><a href="#总览" class="headerlink" title="总览"></a>总览</h2><h3 id="Stream相关的类与接口"><a href="#Stream相关的类与接口" class="headerlink" title="Stream相关的类与接口"></a>Stream相关的类与接口</h3><img src="/images/stream-class.png" width = "600" height = "200" />
+Stream相关的接口与类均在java.util.stream包中。BaseStream是所有Stream的公共接口，提供类基本的iterator、sequential、parallel、onClose接口。Stream（可以理解为引用类型）、IntStream、LongStream、DoubleStream扩展了BaseStream接口并提供了对应类型的接口，比如：相比Stream接口，IntStream、LongStream、DoubleStream拥有特有的average、sum等接口。
+
+<p>每种Stream又有对应pipeline的实现类：ReferencePipeline、IntPipeline、LongPipeline、DoublePipeline，pipeline的概念下一节具体介绍。</p>
+<h3 id="Stream-pipeline"><a href="#Stream-pipeline" class="headerlink" title="Stream pipeline"></a>Stream pipeline</h3><p>Stream的执行过程被抽象出一个pipeline的概念，每个pipeline会包含不同的阶段(stage):</p>
+<ul>
+<li>起始阶段(source stage)，有且仅有一个，Stream创建的时候即被创建，比如：通过Stream.of接口创建时，会实例化ReferencePipeline.Head作为Stream的起始阶段；</li>
+<li>过程阶段(intermediate stage)，0个或多个，如下例中包含两个过程阶段：distinct、map，parallel是一个特殊的存在，它只是设置一个标志位， 并不是一个过程阶段；对于过程阶段的各种操作，又有无状态操作(StatelessOp)和有状态操作(StatefulOp)之分, 比如：对于distinct、dropWhile、sorted需要在执行过程种记录执行状态，即有状态操作，而map、filter则属于无状态操作;</li>
+<li>终端阶段(terminal stage)，有且仅有一个，用于结果计算或者执行一些副作用，如下例中的forEach。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br></pre></td></tr></table></figure>
+
+<p>上例中，最终构造的pipeline如图所示，pipeline数据结构是一个双向链表，每个节点分别存储上一阶段，下一阶段，及起始阶段。终端操作前均为lazy操作，所有操作并未真正执行。而终端操作会综合所有阶段执行计算。<br><img src="/images/stream.dio.png" alt="Alt text here"></p>
+<h2 id="Stream源码分析"><a href="#Stream源码分析" class="headerlink" title="Stream源码分析"></a>Stream源码分析</h2><h3 id="Stream的创建"><a href="#Stream的创建" class="headerlink" title="Stream的创建"></a>Stream的创建</h3><p>Stream、IntStream、LongStream、DoubleStream接口都提供了静态方法<code>of</code>，用于便捷地创建Stream，分别用于创建引用类型、int、long、double的Stream。以Stream接口为例，传入一系列有序元素，比如<code>Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9)</code>。如下所示，<code>Stream.of</code>方法通过调用<code>Arrays.stream</code>实现。所以<code>Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9)</code>等同于<code>Arrays.stream(new int[]&#123;1, 2, 3, 4, 5, 6, 7, 8, 9&#125;)</code></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">//Stream.java</span><br><span class="line">public static&lt;T&gt; Stream&lt;T&gt; of(T... values) &#123;</span><br><span class="line">        return Arrays.stream(values);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">//Arrays.java</span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(T[] array) &#123;</span><br><span class="line">        return stream(array, 0, array.length);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(T[] array, int startInclusive, int endExclusive) &#123;</span><br><span class="line">        return StreamSupport.stream(spliterator(array, startInclusive, endExclusive), false);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>StreamSupport是一个工具类用于创建顺序或并行Stream。StreamSupport.stream需要两个参数：</p>
+<ul>
+<li>spliterator，Spliterator类型，可通过<code>Spliterators.spliterator</code>创建，用于遍历&#x2F;拆分数组，</li>
+<li>parallel，boolean类型，标示是否并行，默认为false。</li>
+</ul>
+<p>ReferencePipeline实现了stream接口，是实现Stream过程阶段或起始阶段的抽象基类。ReferencePipeline.Head是原始阶段的实现。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">//StreamSupport.java</span><br><span class="line">public static &lt;T&gt; Stream&lt;T&gt; stream(Spliterator&lt;T&gt; spliterator, boolean parallel) &#123;</span><br><span class="line">        Objects.requireNonNull(spliterator);</span><br><span class="line">        return new ReferencePipeline.Head&lt;&gt;(spliterator,</span><br><span class="line">                                            StreamOpFlag.fromCharacteristics(spliterator),</span><br><span class="line">                                            parallel);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>至此，Stream创建的简单流程就完成了，IntStream、LongStream、DoubleStream的创建也是类似的。</p>
+<h3 id="Stream执行过程"><a href="#Stream执行过程" class="headerlink" title="Stream执行过程"></a>Stream执行过程</h3><p>以下面的测试代码为例：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Stream.of(<span class="number">1</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>)</span><br><span class="line">                .distinct()</span><br><span class="line">                .parallel()</span><br><span class="line">                .map(item -&gt; item * <span class="number">2</span>)</span><br><span class="line">                .forEach(item -&gt; System.out.print(item + <span class="string">&quot; &quot;</span>));</span><br></pre></td></tr></table></figure>
+
+<h4 id="distinct"><a href="#distinct" class="headerlink" title="distinct"></a>distinct</h4><p>当我们调用<code>distinct</code>方法期望去除重复元素时，会执行如下代码，通过<code>DistinctOps.makeRef</code>创建并append一个disctinct的操作到当前Stream。具体代码如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//ReferencePipeline.java</span></span><br><span class="line"><span class="comment">// Stateful intermediate operations from Stream</span></span><br><span class="line"><span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> Stream&lt;P_OUT&gt; <span class="title function_">distinct</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> DistinctOps.makeRef(<span class="built_in">this</span>);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Appends a &quot;distinct&quot; operation to the provided stream, and returns the</span></span><br><span class="line"><span class="comment">     * new stream.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> &lt;T&gt; the type of both input and output elements</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> upstream a reference stream with element type T</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> the new stream</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">static</span> &lt;T&gt; ReferencePipeline&lt;T, T&gt; <span class="title function_">makeRef</span><span class="params">(AbstractPipeline&lt;?, T, ?&gt; upstream)</span> &#123;</span><br><span class="line">        <span class="comment">//实例化一个有状态操作。</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">ReferencePipeline</span>.StatefulOp&lt;T, T&gt;(upstream, StreamShape.REFERENCE,</span><br><span class="line">                                                      StreamOpFlag.IS_DISTINCT | StreamOpFlag.NOT_SIZED) &#123;</span><br><span class="line">            <span class="comment">//并行计算去除重复元素</span></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            &lt;P_IN&gt; Node&lt;T&gt; <span class="title function_">opEvaluateParallel</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                              Spliterator&lt;P_IN&gt; spliterator,</span></span><br><span class="line"><span class="params">                                              IntFunction&lt;T[]&gt; generator)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">//Lazy执行，包装DistinctSpliterator对象，用于后续执行去除重复元素</span></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            &lt;P_IN&gt; Spliterator&lt;T&gt; <span class="title function_">opEvaluateParallelLazy</span><span class="params">(PipelineHelper&lt;T&gt; helper, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            Sink&lt;T&gt; <span class="title function_">opWrapSink</span><span class="params">(<span class="type">int</span> flags, Sink&lt;T&gt; sink)</span> &#123;</span><br><span class="line">                ...</span><br><span class="line">        &#125;;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="map"><a href="#map" class="headerlink" title="map"></a>map</h4><p><code>map</code>是无状态操作，所以只需实例化一个<code>StatelessOp</code>，而<code>opWrapSink</code>则是包装一层mapper的执行操作。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> &lt;R&gt; Stream&lt;R&gt; <span class="title function_">map</span><span class="params">(Function&lt;? <span class="built_in">super</span> P_OUT, ? extends R&gt; mapper)</span> &#123;</span><br><span class="line">        Objects.requireNonNull(mapper);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">StatelessOp</span>&lt;P_OUT, R&gt;(<span class="built_in">this</span>, StreamShape.REFERENCE,</span><br><span class="line">                                     StreamOpFlag.NOT_SORTED | StreamOpFlag.NOT_DISTINCT) &#123;</span><br><span class="line">            <span class="meta">@Override</span></span><br><span class="line">            Sink&lt;P_OUT&gt; <span class="title function_">opWrapSink</span><span class="params">(<span class="type">int</span> flags, Sink&lt;R&gt; sink)</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">Sink</span>.ChainedReference&lt;P_OUT, R&gt;(sink) &#123;</span><br><span class="line">                    <span class="meta">@Override</span></span><br><span class="line">                    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">accept</span><span class="params">(P_OUT u)</span> &#123;</span><br><span class="line">                        downstream.accept(mapper.apply(u));</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="parallel"><a href="#parallel" class="headerlink" title="parallel"></a>parallel</h4><p>parallel并不是pipeline种的一个阶段，pipeline相关的实现类(如：ReferencePipeline、Intpipeline)有一个共同的基类AbstractPipeline，其上维护了一个变量parallel来标示pipeline是否并行, 仅维护在起始阶段的结构上。如下代码所示：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">     * True if pipeline is parallel, otherwise the pipeline is sequential; only</span></span><br><span class="line"><span class="comment">     * valid for the source stage.</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">boolean</span> parallel;</span><br></pre></td></tr></table></figure>
+
+<p>设置Stream为并行模式</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> S <span class="title function_">parallel</span><span class="params">()</span> &#123;</span><br><span class="line">        sourceStage.parallel = <span class="literal">true</span>;</span><br><span class="line">        <span class="keyword">return</span> (S) <span class="built_in">this</span>;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>设置Stream为串行模式</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//AbstractPipeline.java</span></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="meta">@SuppressWarnings(&quot;unchecked&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> S <span class="title function_">sequential</span><span class="params">()</span> &#123;</span><br><span class="line">        sourceStage.parallel = <span class="literal">false</span>;</span><br><span class="line">        <span class="keyword">return</span> (S) <span class="built_in">this</span>;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+
+<h4 id="forEach"><a href="#forEach" class="headerlink" title="forEach"></a>forEach</h4><p>forEach是一个终端操作，同样，通过工厂方法<code>ForEachOps.makeRef</code>创建一个forEach的操作，用于执行Stream的最终计算。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Terminal operations from Stream</span></span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">forEach</span><span class="params">(Consumer&lt;? <span class="built_in">super</span> P_OUT&gt; action)</span> &#123;</span><br><span class="line">        evaluate(ForEachOps.makeRef(action, <span class="literal">false</span>));</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>evaluate是一个通用的终端操作求值方法，对于forEach、reduce等终端操作均执行该方法，接收<code>TerminalOp</code>对象，首先判断<code>isParallel()</code>,如需并行执行<code>terminalOp.evaluateParallel</code>, 否则执行<code>terminalOp.evaluateSequential</code>。不管是执行那个方法都需要两个参数：</p>
+<ul>
+<li>this, 是起始操作或最后一个过程操作（本例中是<code>map</code>操作），此参数为<code>PipelineHelper</code>类型，从类图结构看，<code>PipelineHelper</code>是所有pipeline类型的顶级父类，用于Stream pipeline的执行，描述了Stream pipeline的所有信息。</li>
+<li><code>sourceSpliterator(terminalOp.getOpFlags())</code>，Spliterator类型，用于遍历&#x2F;拆分数组，对于串行执行或者无状态并行执行的Stream，其为起始阶段默认创建的Spliterator对象，否则需要对所有有状态操作进行计算。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Terminal evaluation methods</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Evaluate the pipeline with a terminal operation to produce a result.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> &lt;R&gt; the type of result</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> terminalOp the terminal operation to be applied to the pipeline.</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> the result</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">final</span> &lt;R&gt; R <span class="title function_">evaluate</span><span class="params">(TerminalOp&lt;E_OUT, R&gt; terminalOp)</span> &#123;</span><br><span class="line">        <span class="keyword">assert</span> <span class="title function_">getOutputShape</span><span class="params">()</span> == terminalOp.inputShape();</span><br><span class="line">        <span class="keyword">if</span> (linkedOrConsumed)</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> <span class="title class_">IllegalStateException</span>(MSG_STREAM_LINKED);</span><br><span class="line">        linkedOrConsumed = <span class="literal">true</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> isParallel()</span><br><span class="line">               ? terminalOp.evaluateParallel(<span class="built_in">this</span>, sourceSpliterator(terminalOp.getOpFlags()))</span><br><span class="line">               : terminalOp.evaluateSequential(<span class="built_in">this</span>, sourceSpliterator(terminalOp.getOpFlags()));</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>evaluateSequential</code>,分两部分执行：</p>
+<ul>
+<li><code>wrapSink</code>,将所有过程操作比如map、filter等包装成一个Sink；</li>
+<li><code>copyInto</code>,执行计算</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">public</span> &lt;S&gt; Void <span class="title function_">evaluateSequential</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                   Spliterator&lt;S&gt; spliterator)</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> helper.wrapAndCopyInto(<span class="built_in">this</span>, spliterator).get();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> &lt;P_IN, S <span class="keyword">extends</span> <span class="title class_">Sink</span>&lt;E_OUT&gt;&gt; S <span class="title function_">wrapAndCopyInto</span><span class="params">(S sink, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">    copyInto(wrapSink(Objects.requireNonNull(sink)), spliterator);</span><br><span class="line">    <span class="keyword">return</span> sink;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> &lt;P_IN&gt; <span class="keyword">void</span> <span class="title function_">copyInto</span><span class="params">(Sink&lt;P_IN&gt; wrappedSink, Spliterator&lt;P_IN&gt; spliterator)</span> &#123;</span><br><span class="line">    Objects.requireNonNull(wrappedSink);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!StreamOpFlag.SHORT_CIRCUIT.isKnown(getStreamAndOpFlags())) &#123;</span><br><span class="line">        wrappedSink.begin(spliterator.getExactSizeIfKnown());</span><br><span class="line">        spliterator.forEachRemaining(wrappedSink);</span><br><span class="line">        wrappedSink.end();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span> &#123;</span><br><span class="line">        copyIntoWithCancel(wrappedSink, spliterator);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于<code>evaluateParallel</code>, 则拆分成多个task，并行执行，基于Fork&#x2F;Join框架实现。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">public</span> &lt;S&gt; Void <span class="title function_">evaluateParallel</span><span class="params">(PipelineHelper&lt;T&gt; helper,</span></span><br><span class="line"><span class="params">                                 Spliterator&lt;S&gt; spliterator)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (ordered)</span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ForEachOrderedTask</span>&lt;&gt;(helper, spliterator, <span class="built_in">this</span>).invoke();</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ForEachTask</span>&lt;&gt;(helper, spliterator, helper.wrapSink(<span class="built_in">this</span>)).invoke();</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><ul>
+<li>可使用<code>Stream</code>、<code>IntStream</code>、<code>LongStream</code>、<code>DoubleStream</code>接口或<code>Array.stream</code>来创建一个<code>Stream</code>，不同类型的<code>Stream</code>间可通过<code>mapToObj</code>、<code>mapToInt</code>互相转换</li>
+<li>Stream的执行过程被抽象出一个pipeline的概念，每个pipeline会包含不同的阶段(stage)：起始阶段、过程阶段、终端阶段，用于结果计算的数据和策略的准备。</li>
+<li>对于过程阶段的操作，又有无状态操作(StatelessOp)和有状态操作(StatefulOp)之分, 比如：对于distinct、dropWhile、sorted需要在执行过程种记录执行状态，即有状态操作</li>
+</ul>
+<p>本文地址： <a href="http://chengco.net/posts/52053/">http://chengco.net/posts/52053/</a> ，转载请注明出处。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Java/" rel="tag"># Java</a>
+              <a href="/tags/JDK/" rel="tag"># JDK</a>
+              <a href="/tags/Stream/" rel="tag"># Stream</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/23605/" rel="prev" title="Lombok踩过的坑">
+                  <i class="fa fa-chevron-left"></i> Lombok踩过的坑
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/31379/" rel="next" title="Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证">
+                  Java Bean Validation 2.0 (一): 对Spring Boot应用的数据验证 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">chengco</span>
+</div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">30k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">27 分钟</span>
+  </span>
+</div>
+<div class="busuanzi-count">
+    <span class="post-meta-item" id="busuanzi_container_site_uv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/pisces/" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/next-boot.js"></script>
+
+  
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.4.0/search.js" integrity="sha256-vXZMYLEqsROAXkEw93GGIvaB2ab+QW6w3+1ahD9nXXA=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+  
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+</body>
+</html>
